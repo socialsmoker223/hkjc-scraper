@@ -1,0 +1,20 @@
+# Web scraping
+requests==2.31.0
+beautifulsoup4==4.12.3
+
+# Database
+SQLAlchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Configuration
+python-dotenv==1.0.1
+
+# Data handling (optional, for demo/analysis)
+pandas==2.2.0
+
+# Development dependencies (optional)
+# pytest==7.4.4
+# pytest-cov==4.1.0
+# mypy==1.8.0
+# ruff==0.1.15
