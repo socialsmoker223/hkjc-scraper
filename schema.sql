@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS meeting (
     venue_code VARCHAR(4) NOT NULL,  -- ST/HV
     venue_name VARCHAR(32),  -- 沙田 / 跑馬地
     source_url TEXT,
+    season INT,  -- 賽季起始年 (e.g. 2024 for 24/25)
     UNIQUE(date, venue_code)
 );
 
@@ -21,7 +22,7 @@ CREATE TABLE IF NOT EXISTS race (
     id BIGSERIAL PRIMARY KEY,
     meeting_id BIGINT NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
     race_no INT NOT NULL,  -- 當日第幾場
-    race_code VARCHAR(16),  -- LocalResults 括號內編號
+    race_code INT,  -- 全季總場次, 每年9月重置
     name_cn VARCHAR(128),
     class_text VARCHAR(32),  -- 第四班等
     distance_m INT,

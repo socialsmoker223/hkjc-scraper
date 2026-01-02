@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from decimal import Decimal
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -67,8 +68,10 @@ def parse_race_header(info_table: BeautifulSoup):
     first = rows[0].get_text(" ", strip=True)
     m_no = re.search(r"第\s*(\d+)\s*場", first)
     race_no = int(m_no.group(1)) if m_no else None
+    race_no = int(m_no.group(1)) if m_no else None
     m_code = re.search(r"\((\d+)\)", first)
-    race_code = m_code.group(1) if m_code else None
+    race_code = int(m_code.group(1)) if m_code else None  # Parse as INT
+
 
     # Extract race class from specific HTML element path
     # VERIFIED with browser inspection: class info is ALWAYS in row 2, cell 0
@@ -191,10 +194,23 @@ def scrape_race_page(local_url: str):
     m_meet = re.search(r"賽事日期:\s*(\d{2}/\d{2}/\d{4})\s+(\S+)", text)
     meeting_date_dmy = m_meet.group(1) if m_meet else None
     meeting_venue = m_meet.group(2) if m_meet else None
-    meeting_date_ymd = None
     if meeting_date_dmy:
         d, m, y = meeting_date_dmy.split("/")
         meeting_date_ymd = f"{y}/{m}/{d}"
+
+    # Calculate Season (Start Year)
+    season_start_year = None
+    if meeting_date_ymd:
+        dt = datetime.strptime(meeting_date_ymd, "%Y/%m/%d").date()
+        year = dt.year
+        month = dt.month
+        # Season starts in September (9)
+        # If Jan-Aug (1-8): Season is Year-1 (e.g. 2025 Jan -> 2024 season)
+        # If Sep-Dec (9-12): Season is Year (e.g. 2024 Sep -> 2024 season)
+        if month < 9:
+            season_start_year = year - 1
+        else:
+            season_start_year = year
 
     meeting = {
         "date_dmy": meeting_date_dmy,
@@ -202,6 +218,7 @@ def scrape_race_page(local_url: str):
         "venue_name": meeting_venue,
         "venue_code": None,  # 由 scrape_meeting 依 Racecourse 參數補
         "source_url": local_url,
+        "season": season_start_year,
     }
 
     # Race header

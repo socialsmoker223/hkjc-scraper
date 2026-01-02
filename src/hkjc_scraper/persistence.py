@@ -46,6 +46,7 @@ def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
 
     # Remove fields that aren't in the Meeting model
     clean_data.pop("date_dmy", None)
+    # Note: 'season' is now a valid field in Meeting model, so we don't pop it
 
     stmt = select(Meeting).where(
         Meeting.date == clean_data["date"],
