@@ -2,16 +2,15 @@
 Database connection and session management
 資料庫連線與 session 管理
 """
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
-from config import config
-from models import Base
-
+from hkjc_scraper.config import config
+from hkjc_scraper.models import Base
 
 # Create engine with connection pooling
 engine = create_engine(

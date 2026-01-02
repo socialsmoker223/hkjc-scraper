@@ -3,6 +3,7 @@ Configuration management for HKJC scraper
 從環境變數或 .env 檔案載入設定
 """
 import os
+
 from dotenv import load_dotenv
 
 # Load .env file if it exists

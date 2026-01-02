@@ -26,7 +26,7 @@ db-reset: ## Reset database (WARNING: deletes all data)
 	docker-compose up -d postgres
 	@echo "Waiting for PostgreSQL to be ready..."
 	@sleep 3
-	uv run python database.py
+	uv run python -m hkjc_scraper.database
 
 db-logs: ## View database logs
 	docker-compose logs -f postgres
@@ -44,17 +44,17 @@ scrape: ## Scrape data (usage: make scrape DATE=2025/12/23)
 		echo "Error: DATE is required. Usage: make scrape DATE=2025/12/23"; \
 		exit 1; \
 	fi
-	uv run python main.py $(DATE)
+	uv run hkjc-scraper $(DATE)
 
 dry-run: ## Dry run scrape (usage: make dry-run DATE=2025/12/23)
 	@if [ -z "$(DATE)" ]; then \
 		echo "Error: DATE is required. Usage: make dry-run DATE=2025/12/23"; \
 		exit 1; \
 	fi
-	uv run python main.py $(DATE) --dry-run
+	uv run hkjc-scraper $(DATE) --dry-run
 
 init-db: ## Initialize database tables
-	uv run python database.py
+	uv run python -m hkjc_scraper.database
 
 test: ## Run tests
 	uv run pytest
