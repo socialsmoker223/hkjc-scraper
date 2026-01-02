@@ -12,6 +12,7 @@ python-dotenv==1.0.1
 
 # Data handling (optional, for demo/analysis)
 pandas==2.2.0
+tqdm==4.66.1
 
 # Development dependencies (optional)
 # pytest==7.4.4
