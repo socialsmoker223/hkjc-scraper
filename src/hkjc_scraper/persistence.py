@@ -2,18 +2,23 @@
 Data persistence layer with UPSERT operations
 資料持久化層，提供 UPSERT 操作
 """
-from datetime import date, datetime
-from decimal import Decimal
-from typing import Optional, Dict, Any, List
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from models import (
-    Meeting, Race, Horse, HorseProfile, HorseProfileHistory,
-    Jockey, Trainer, Runner, HorseSectional
+from hkjc_scraper.models import (
+    Horse,
+    HorseProfile,
+    HorseProfileHistory,
+    HorseSectional,
+    Jockey,
+    Meeting,
+    Race,
+    Runner,
+    Trainer,
 )
-
 
 # ============================================================================
 # Meeting and Race persistence

@@ -8,14 +8,14 @@ from typing import Optional
 
 from sqlalchemy import (
     BIGINT,
-    INT,
-    VARCHAR,
-    TEXT,
     DATE,
     DECIMAL,
+    INT,
+    TEXT,
+    VARCHAR,
     ForeignKey,
-    UniqueConstraint,
     Index,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func

@@ -1,10 +1,9 @@
 import re
 from decimal import Decimal
-from urllib.parse import urlencode, urljoin, urlparse, parse_qs
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-
 
 BASE = "https://racing.hkjc.com/racing/information/Chinese"
 
@@ -685,6 +684,7 @@ def scrape_meeting(date_ymd: str):
 
 if __name__ == "__main__":
     import sys
+
     import pandas as pd
 
     meeting_date = "2025/12/23"

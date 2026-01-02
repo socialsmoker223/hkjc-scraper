@@ -6,9 +6,9 @@ import argparse
 import sys
 from datetime import datetime
 
-from database import get_db, init_db, check_connection
-from persistence import save_meeting_data
-from hkjc_scraper import scrape_meeting
+from hkjc_scraper.database import check_connection, get_db, init_db
+from hkjc_scraper.persistence import save_meeting_data
+from hkjc_scraper.scraper import scrape_meeting
 
 
 def main():
