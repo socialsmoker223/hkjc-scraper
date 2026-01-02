@@ -12,6 +12,7 @@ dependencies = [
     "alembic>=1.13.1",
     "python-dotenv>=1.0.1",
     "pandas>=2.2.0",
+    "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]

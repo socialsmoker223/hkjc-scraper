@@ -2,10 +2,10 @@
 Data persistence layer with UPSERT operations
 資料持久化層，提供 UPSERT 操作
 """
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime
+from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hkjc_scraper.models import (
@@ -24,7 +24,7 @@ from hkjc_scraper.models import (
 # Meeting and Race persistence
 # ============================================================================
 
-def upsert_meeting(db: Session, meeting_data: Dict[str, Any]) -> Meeting:
+def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
     """
     插入或更新 meeting
     Insert or update meeting (unique by date + venue_code)
@@ -41,7 +41,6 @@ def upsert_meeting(db: Session, meeting_data: Dict[str, Any]) -> Meeting:
 
     # Convert date string (YYYY/MM/DD) to date object if it's a string
     if isinstance(clean_data.get("date"), str):
-        from datetime import datetime
         date_str = clean_data["date"]
         clean_data["date"] = datetime.strptime(date_str, "%Y/%m/%d").date()
 
@@ -67,7 +66,7 @@ def upsert_meeting(db: Session, meeting_data: Dict[str, Any]) -> Meeting:
     return meeting
 
 
-def upsert_race(db: Session, race_data: Dict[str, Any]) -> Race:
+def upsert_race(db: Session, race_data: dict[str, Any]) -> Race:
     """
     插入或更新 race
     Insert or update race (unique by meeting_id + race_no)
@@ -98,11 +97,27 @@ def upsert_race(db: Session, race_data: Dict[str, Any]) -> Race:
     return race
 
 
+def check_meeting_exists(db: Session, race_date: date) -> bool:
+    """
+    Check if meeting data exists for a given date
+    """
+    stmt = select(Meeting).where(Meeting.date == race_date)
+    return db.execute(stmt).first() is not None
+
+
+def get_max_meeting_date(db: Session) -> Optional[date]:
+    """
+    Get the latest meeting date in the database
+    """
+    stmt = select(func.max(Meeting.date))
+    return db.execute(stmt).scalar()
+
+
 # ============================================================================
 # Horse, Jockey, Trainer persistence (entity master tables)
 # ============================================================================
 
-def upsert_horse(db: Session, horse_data: Dict[str, Any]) -> Horse:
+def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
     """
     插入或更新 horse
     Insert or update horse (unique by code)
@@ -131,7 +146,7 @@ def upsert_horse(db: Session, horse_data: Dict[str, Any]) -> Horse:
     return horse
 
 
-def upsert_jockey(db: Session, jockey_data: Dict[str, Any]) -> Jockey:
+def upsert_jockey(db: Session, jockey_data: dict[str, Any]) -> Jockey:
     """
     插入或更新 jockey
     Insert or update jockey (unique by code)
@@ -160,7 +175,7 @@ def upsert_jockey(db: Session, jockey_data: Dict[str, Any]) -> Jockey:
     return jockey
 
 
-def upsert_trainer(db: Session, trainer_data: Dict[str, Any]) -> Trainer:
+def upsert_trainer(db: Session, trainer_data: dict[str, Any]) -> Trainer:
     """
     插入或更新 trainer
     Insert or update trainer (unique by code)
@@ -193,7 +208,7 @@ def upsert_trainer(db: Session, trainer_data: Dict[str, Any]) -> Trainer:
 # Horse Profile persistence
 # ============================================================================
 
-def upsert_horse_profile(db: Session, horse_id: int, profile_data: Dict[str, Any]) -> HorseProfile:
+def upsert_horse_profile(db: Session, horse_id: int, profile_data: dict[str, Any]) -> HorseProfile:
     """
     插入或更新 horse_profile (最新快照)
     Insert or update horse_profile (current snapshot, unique by horse_id)
@@ -222,7 +237,7 @@ def upsert_horse_profile(db: Session, horse_id: int, profile_data: Dict[str, Any
     return profile
 
 
-def insert_horse_profile_history(db: Session, horse_id: int, profile_data: Dict[str, Any],
+def insert_horse_profile_history(db: Session, horse_id: int, profile_data: dict[str, Any],
                                    captured_at: Optional[datetime] = None) -> HorseProfileHistory:
     """
     插入 horse_profile_history 快照
@@ -254,7 +269,7 @@ def insert_horse_profile_history(db: Session, horse_id: int, profile_data: Dict[
 # Runner and Sectional persistence
 # ============================================================================
 
-def upsert_runner(db: Session, runner_data: Dict[str, Any]) -> Runner:
+def upsert_runner(db: Session, runner_data: dict[str, Any]) -> Runner:
     """
     插入或更新 runner
     Insert or update runner (unique by race_id + horse_id)
@@ -292,7 +307,7 @@ def upsert_runner(db: Session, runner_data: Dict[str, Any]) -> Runner:
     return runner
 
 
-def upsert_horse_sectional(db: Session, sectional_data: Dict[str, Any]) -> HorseSectional:
+def upsert_horse_sectional(db: Session, sectional_data: dict[str, Any]) -> HorseSectional:
     """
     插入或更新 horse_sectional
     Insert or update horse_sectional (unique by runner_id + section_no)
@@ -333,7 +348,7 @@ def upsert_horse_sectional(db: Session, sectional_data: Dict[str, Any]) -> Horse
 # High-level save function for complete race data
 # ============================================================================
 
-def save_race_data(db: Session, race_data: Dict[str, Any]) -> Dict[str, Any]:
+def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
     """
     儲存完整的賽事資料（meeting, race, horses, jockeys, trainers, runners, sectionals）
     Save complete race data including all related entities
@@ -459,7 +474,7 @@ def save_race_data(db: Session, race_data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def save_meeting_data(db: Session, meeting_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[str, Any]:
     """
     儲存整個賽日的多場賽事資料
     Save all races for a meeting

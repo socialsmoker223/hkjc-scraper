@@ -34,6 +34,8 @@ def list_race_urls_for_meeting_all_courses(date_ymd: str):
 
         q = parse_qs(urlparse(full).query)
         racecourse = q.get("Racecourse", [None])[0]
+        if racecourse != "HV" and racecourse != "ST":
+            continue
         raceno = q.get("RaceNo", [None])[0]
         race_no = int(raceno) if raceno and raceno.isdigit() else None
 
@@ -68,10 +70,26 @@ def parse_race_header(info_table: BeautifulSoup):
     m_code = re.search(r"\((\d+)\)", first)
     race_code = m_code.group(1) if m_code else None
 
-    header_text = " ".join(r.get_text(" ", strip=True) for r in rows[1:5])
+    # Extract race class from specific HTML element path
+    # VERIFIED with browser inspection: class info is ALWAYS in row 2, cell 0
+    # Table structure:
+    #   Row 0: Race number (e.g., "第 1 場 (45)")
+    #   Row 1: Empty row
+    #   Row 2, Cell 0: Class + distance (e.g., "第五班 - 1200米 - (40-0)" or "三級賽 - 1400米")
+    #   Row 3: Race name
+    race_class_cell = rows[2].find_all("td")[0] if len(rows) > 2 else None
+    if race_class_cell:
+        cell_text = race_class_cell.get_text(strip=True)
+        # Split by " - " and take first part (class is before distance)
+        # Verified examples from actual HKJC pages:
+        #   "第五班 - 1200米 - (40-0)" → "第五班"
+        #   "三級賽 - 1400米" → "三級賽"
+        #   "第十一班 - 1400米" → "第十一班"
+        race_class = cell_text.split(' - ')[0].strip()
+    else:
+        race_class = None
 
-    m_cls = re.search(r"(第[一二三四五六七八九十]+班)", header_text)
-    race_class = m_cls.group(1) if m_cls else None
+    header_text = " ".join(r.get_text(" ", strip=True) for r in rows[1:5])
 
     m_dist = re.search(r"(\d{3,4})米", header_text)
     distance_m = int(m_dist.group(1)) if m_dist else None

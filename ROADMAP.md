@@ -174,25 +174,25 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
   ```
 
 ### 3.3 Incremental Updates & Smart Scraping
-**Current behavior:** Scrapes everything, relies on UPSERT to handle duplicates (inefficient)
+**Current behavior:** Smart scraping with database checks and incremental update support
 
-- [ ] **Check database before scraping** (avoid redundant downloads)
+- [x] **Check database before scraping** (avoid redundant downloads)
   - Query if meeting exists for (date, venue)
   - Query if race exists for (meeting_id, race_no)
   - Skip scraping if data already present (unless --force flag)
-- [ ] **Implement "backfill" mode** for historical data
-  - `python main.py --backfill --start 2024/01/01 --end 2024/12/31`
+- [x] **Implement "backfill" mode** for historical data
+  - `python main.py --backfill 2024/01/01 2024/12/31`
   - Iterate through date range
   - Skip weekdays with no races (check HKJC calendar)
-- [ ] **Implement "update" mode** (only scrape new data)
+- [x] **Implement "update" mode** (only scrape new data)
   - `python main.py --update` (no date required)
   - Find max date in database: `SELECT MAX(date) FROM meeting`
   - Scrape from (max_date + 1 day) to today
-- [ ] **Add date range support**
-  - `python main.py --start 2025/12/01 --end 2025/12/31`
+- [x] **Add date range support**
+  - `python main.py --date-range 2025/12/01 2025/12/31`
   - Validate date ranges
   - Progress bar for multi-date scraping (use `tqdm`)
-- [ ] **Add --force flag to re-scrape existing data**
+- [x] **Add --force flag to re-scrape existing data**
   - `python main.py 2025/12/23 --force`
   - Useful when HKJC updates results (e.g., inquiry changes)
 
@@ -377,8 +377,8 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ## Progress Tracking
 
 **Current Phase:** Phase 3 - Production Hardening (making it production-ready)
-**Overall Completion:** 70% → 75% (+5% from horse profile implementation)
-**Last Updated:** 2025-12-24 (updated after horse profile implementation)
+**Overall Completion:** 80% (+5% from incremental updates)
+**Last Updated:** 2025-01-02 (updated after incremental updates implementation)
 **Total Python Code:** ~1,900 lines across 6 files (+~180 lines for horse profiles)
 
 ### Completion by Phase
@@ -392,12 +392,12 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
   - ✅ Horse profile scraping: **100%** ⬆️ (fully implemented 2025-12-24)
   - ❌ Data validation: 0% (only remaining item in Phase 2)
 
-- ⏳ **Phase 3: Production Hardening** - **0%** (CRITICAL FOR PRODUCTION)
+- ⏳ **Phase 3: Production Hardening** - **35%** (INCREMENTAL UPDATES DONE)
   - ❌ No error handling
   - ❌ No logging system
   - ❌ No retry logic
   - ❌ No rate limiting
-  - ❌ No incremental updates
+  - ✅ Incremental updates: 100% (smart scraping, backfill, update, range)
 
 - ⏳ **Phase 4: Usability & Automation** - **60%** (CLI DONE, SCHEDULING PENDING)
   - ✅ Basic CLI: 100% (argparse, dry-run, init-db)
@@ -424,16 +424,13 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ### Immediate Priorities (Get to Production MVP)
 1. ~~**Implement horse profile scraping** (Phase 2.1)~~ ✅ **COMPLETED 2025-12-24**
 
-2. **Add basic error handling & logging** (Phase 3.1, 3.2) ⬅️ **NEW TOP PRIORITY**
+2. ~~**Implement incremental updates** (Phase 3.3)~~ ✅ **COMPLETED 2025-01-02**
+
+3. **Add basic error handling & logging** (Phase 3.1, 3.2) ⬅️ **NEW TOP PRIORITY**
    - Critical for reliability
    - Replace print() with logging
    - Add try/except around HTTP requests
 
-3. **Implement incremental updates** (Phase 3.3)
-   - Check DB before scraping
-   - Add --force flag to re-scrape
-
-### Medium-Term Priorities (Production Ready)
 4. **Write tests** (Phase 5.1)
    - At least test parsing functions
    - Save fixture HTML files
