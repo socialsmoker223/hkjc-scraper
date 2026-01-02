@@ -38,6 +38,7 @@ class Meeting(Base):
     venue_code: Mapped[str] = mapped_column(VARCHAR(4), nullable=False)  # ST/HV
     venue_name: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
     source_url: Mapped[Optional[str]] = mapped_column(TEXT)
+    season: Mapped[Optional[int]] = mapped_column(INT)  # e.g. 2024 for 24/25
 
     # Relationships
     races: Mapped[list["Race"]] = relationship("Race", back_populates="meeting", cascade="all, delete-orphan")
@@ -57,7 +58,7 @@ class Race(Base):
     id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
     meeting_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("meeting.id", ondelete="CASCADE"), nullable=False)
     race_no: Mapped[int] = mapped_column(INT, nullable=False)
-    race_code: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
+    race_code: Mapped[Optional[int]] = mapped_column(INT)  # Changed from VARCHAR(16)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     class_text: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
     distance_m: Mapped[Optional[int]] = mapped_column(INT)

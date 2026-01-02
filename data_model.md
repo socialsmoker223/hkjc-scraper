@@ -10,6 +10,7 @@
 - `venue_code` VARCHAR(4) — ST/HV  
 - `venue_name` VARCHAR(32) — 沙田 / 跑馬地  
 - `source_url` TEXT  
+- `season` INT — 賽季起始年 (e.g. 2024 for 24/25)，每年9月開始新賽季
 
 關係：1:N → `race`（一個賽日多場賽事）。[2]
 
@@ -17,7 +18,7 @@
 - `id` BIGSERIAL PK  
 - `meeting_id` BIGINT FK → `meeting.id`  
 - `race_no` INT — 當日第幾場  
-- `race_code` VARCHAR(16) — LocalResults 括號內編號  
+- `race_code` INT — 全季總場次 (e.g. 284)，每年9月重置為 1  
 - `name_cn` VARCHAR(128)  
 - `class_text` VARCHAR(32) — 第四班等  
 - `distance_m` INT  
