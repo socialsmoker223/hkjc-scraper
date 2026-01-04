@@ -1,4 +1,4 @@
-.PHONY: help install dev db-up db-down db-reset scrape test lint format clean
+.PHONY: help install dev precommit db-up db-down db-reset scrape test lint format clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -11,6 +11,9 @@ install: ## Install dependencies with uv
 
 dev: ## Install with dev dependencies
 	uv pip install -e ".[dev]"
+
+precommit: ## Install pre-commit hooks
+	uv run pre-commit install
 
 db-up: ## Start PostgreSQL with Docker
 	docker-compose up -d postgres

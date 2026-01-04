@@ -2,6 +2,7 @@
 Data persistence layer with UPSERT operations
 資料持久化層，提供 UPSERT 操作
 """
+
 from datetime import date, datetime
 from typing import Any, Optional
 
@@ -23,6 +24,7 @@ from hkjc_scraper.models import (
 # ============================================================================
 # Meeting and Race persistence
 # ============================================================================
+
 
 def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
     """
@@ -48,10 +50,7 @@ def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
     clean_data.pop("date_dmy", None)
     # Note: 'season' is now a valid field in Meeting model, so we don't pop it
 
-    stmt = select(Meeting).where(
-        Meeting.date == clean_data["date"],
-        Meeting.venue_code == clean_data["venue_code"]
-    )
+    stmt = select(Meeting).where(Meeting.date == clean_data["date"], Meeting.venue_code == clean_data["venue_code"])
     meeting = db.execute(stmt).scalar_one_or_none()
 
     if meeting:
@@ -79,10 +78,7 @@ def upsert_race(db: Session, race_data: dict[str, Any]) -> Race:
     Returns:
         Race object
     """
-    stmt = select(Race).where(
-        Race.meeting_id == race_data["meeting_id"],
-        Race.race_no == race_data["race_no"]
-    )
+    stmt = select(Race).where(Race.meeting_id == race_data["meeting_id"], Race.race_no == race_data["race_no"])
     race = db.execute(stmt).scalar_one_or_none()
 
     if race:
@@ -117,6 +113,7 @@ def get_max_meeting_date(db: Session) -> Optional[date]:
 # ============================================================================
 # Horse, Jockey, Trainer persistence (entity master tables)
 # ============================================================================
+
 
 def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
     """
@@ -209,6 +206,7 @@ def upsert_trainer(db: Session, trainer_data: dict[str, Any]) -> Trainer:
 # Horse Profile persistence
 # ============================================================================
 
+
 def upsert_horse_profile(db: Session, horse_id: int, profile_data: dict[str, Any]) -> HorseProfile:
     """
     插入或更新 horse_profile (最新快照)
@@ -238,8 +236,9 @@ def upsert_horse_profile(db: Session, horse_id: int, profile_data: dict[str, Any
     return profile
 
 
-def insert_horse_profile_history(db: Session, horse_id: int, profile_data: dict[str, Any],
-                                   captured_at: Optional[datetime] = None) -> HorseProfileHistory:
+def insert_horse_profile_history(
+    db: Session, horse_id: int, profile_data: dict[str, Any], captured_at: Optional[datetime] = None
+) -> HorseProfileHistory:
     """
     插入 horse_profile_history 快照
     Insert horse_profile_history snapshot
@@ -256,11 +255,7 @@ def insert_horse_profile_history(db: Session, horse_id: int, profile_data: dict[
     if captured_at is None:
         captured_at = datetime.now()
 
-    history = HorseProfileHistory(
-        horse_id=horse_id,
-        captured_at=captured_at,
-        **profile_data
-    )
+    history = HorseProfileHistory(horse_id=horse_id, captured_at=captured_at, **profile_data)
     db.add(history)
     db.flush()
     return history
@@ -269,6 +264,7 @@ def insert_horse_profile_history(db: Session, horse_id: int, profile_data: dict[
 # ============================================================================
 # Runner and Sectional persistence
 # ============================================================================
+
 
 def upsert_runner(db: Session, runner_data: dict[str, Any]) -> Runner:
     """
@@ -289,10 +285,7 @@ def upsert_runner(db: Session, runner_data: dict[str, Any]) -> Runner:
     clean_data.pop("trainer_name_cn", None)
     clean_data.pop("hkjc_horse_id", None)
 
-    stmt = select(Runner).where(
-        Runner.race_id == clean_data["race_id"],
-        Runner.horse_id == clean_data["horse_id"]
-    )
+    stmt = select(Runner).where(Runner.race_id == clean_data["race_id"], Runner.horse_id == clean_data["horse_id"])
     runner = db.execute(stmt).scalar_one_or_none()
 
     if runner:
@@ -327,8 +320,7 @@ def upsert_horse_sectional(db: Session, sectional_data: dict[str, Any]) -> Horse
     clean_data.pop("hkjc_horse_id", None)
 
     stmt = select(HorseSectional).where(
-        HorseSectional.runner_id == clean_data["runner_id"],
-        HorseSectional.section_no == clean_data["section_no"]
+        HorseSectional.runner_id == clean_data["runner_id"], HorseSectional.section_no == clean_data["section_no"]
     )
     sectional = db.execute(stmt).scalar_one_or_none()
 
@@ -348,6 +340,7 @@ def upsert_horse_sectional(db: Session, sectional_data: dict[str, Any]) -> Horse
 # ============================================================================
 # High-level save function for complete race data
 # ============================================================================
+
 
 def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
     """

@@ -2,6 +2,7 @@
 Database connection and session management
 資料庫連線與 session 管理
 """
+
 from collections.abc import Generator
 from contextlib import contextmanager
 
