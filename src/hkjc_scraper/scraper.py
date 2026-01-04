@@ -45,11 +45,13 @@ def list_race_urls_for_meeting_all_courses(date_ymd: str):
             continue
         seen.add(key)
 
-        out.append({
-            "url": full,
-            "racecourse": racecourse,
-            "race_no": race_no,
-        })
+        out.append(
+            {
+                "url": full,
+                "racecourse": racecourse,
+                "race_no": race_no,
+            }
+        )
 
     # 依場地、場次排序，方便 debug
     out.sort(key=lambda x: ((x["racecourse"] or ""), x["race_no"] or 0))
@@ -72,7 +74,6 @@ def parse_race_header(info_table: BeautifulSoup):
     m_code = re.search(r"\((\d+)\)", first)
     race_code = int(m_code.group(1)) if m_code else None  # Parse as INT
 
-
     # Extract race class from specific HTML element path
     # VERIFIED with browser inspection: class info is ALWAYS in row 2, cell 0
     # Table structure:
@@ -88,7 +89,7 @@ def parse_race_header(info_table: BeautifulSoup):
         #   "第五班 - 1200米 - (40-0)" → "第五班"
         #   "三級賽 - 1400米" → "三級賽"
         #   "第十一班 - 1400米" → "第十一班"
-        race_class = cell_text.split(' - ')[0].strip()
+        race_class = cell_text.split(" - ")[0].strip()
     else:
         race_class = None
 
@@ -318,25 +319,27 @@ def scrape_race_page(local_url: str):
                 "name_en": None,
             }
 
-        runners.append({
-            "finish_position_raw": finish_position_raw,
-            "finish_position_num": finish_position_num,
-            "horse_no": to_int_or_none(horse_no_raw),
-            "horse_code": horse_code,
-            "horse_name_cn": horse_name_cn,
-            "hkjc_horse_id": hkjc_horse_id,
-            "jockey_code": jockey_code,
-            "jockey_name_cn": jockey_name_cn,
-            "trainer_code": trainer_code,
-            "trainer_name_cn": trainer_name_cn,
-            "actual_weight": actual_weight,
-            "declared_weight": declared_weight,
-            "draw": draw,
-            "margin_raw": margin_raw,
-            "running_pos_raw": running_pos_raw,
-            "finish_time_str": finish_time_str,
-            "win_odds": win_odds,
-        })
+        runners.append(
+            {
+                "finish_position_raw": finish_position_raw,
+                "finish_position_num": finish_position_num,
+                "horse_no": to_int_or_none(horse_no_raw),
+                "horse_code": horse_code,
+                "horse_name_cn": horse_name_cn,
+                "hkjc_horse_id": hkjc_horse_id,
+                "jockey_code": jockey_code,
+                "jockey_name_cn": jockey_name_cn,
+                "trainer_code": trainer_code,
+                "trainer_name_cn": trainer_name_cn,
+                "actual_weight": actual_weight,
+                "declared_weight": declared_weight,
+                "draw": draw,
+                "margin_raw": margin_raw,
+                "running_pos_raw": running_pos_raw,
+                "finish_time_str": finish_time_str,
+                "win_odds": win_odds,
+            }
+        )
 
     return {
         "meeting": meeting,
@@ -621,22 +624,24 @@ def scrape_sectional_time(date_dmy: str, race_no: int):
             time_sub2 = times[2] if len(times) >= 3 else None
             time_sub3 = times[3] if len(times) >= 4 else None
 
-            horse_sectionals.append({
-                # DB：之後 join runner / horse / race 填 id
-                "finish_order": finish_order,
-                "horse_no": int(horse_no_raw) if horse_no_raw.isdigit() else None,
-                "horse_code": horse_code,
-                "hkjc_horse_id": hkjc_horse_id,
-                "section_no": idx,
-                "position": pos,
-                "margin_raw": margin,
-                "time_main": time_main,
-                "time_sub1": time_sub1,
-                "time_sub2": time_sub2,
-                "time_sub3": time_sub3,
-                "finish_time_str": finish_time_str,
-                "raw_cell": raw_norm,
-            })
+            horse_sectionals.append(
+                {
+                    # DB：之後 join runner / horse / race 填 id
+                    "finish_order": finish_order,
+                    "horse_no": int(horse_no_raw) if horse_no_raw.isdigit() else None,
+                    "horse_code": horse_code,
+                    "hkjc_horse_id": hkjc_horse_id,
+                    "section_no": idx,
+                    "position": pos,
+                    "margin_raw": margin,
+                    "time_main": time_main,
+                    "time_sub1": time_sub1,
+                    "time_sub2": time_sub2,
+                    "time_sub3": time_sub3,
+                    "finish_time_str": finish_time_str,
+                    "raw_cell": raw_norm,
+                }
+            )
 
     return {"horse_sectionals": horse_sectionals}
 
@@ -671,7 +676,7 @@ def scrape_meeting(date_ymd: str):
 
     for item in race_links:
         local_url = item["url"]
-        venue_code = item["racecourse"]   # ST / HV
+        venue_code = item["racecourse"]  # ST / HV
         print(f"Scraping race page: {local_url}")
         race_data = scrape_race_page(local_url)
 
@@ -681,9 +686,7 @@ def scrape_meeting(date_ymd: str):
         date_dmy = race_data["meeting"]["date_dmy"]
         race_no = race_data["race"]["race_no"]
 
-        sectional_url = (
-            f"{BASE}/Racing/DisplaySectionalTime.aspx?RaceDate={date_dmy}&RaceNo={race_no}"
-        )
+        sectional_url = f"{BASE}/Racing/DisplaySectionalTime.aspx?RaceDate={date_dmy}&RaceNo={race_no}"
         race_data["race"]["sectional_url"] = sectional_url
 
         print(f"  Scraping sectional: date={date_dmy}, race_no={race_no}")

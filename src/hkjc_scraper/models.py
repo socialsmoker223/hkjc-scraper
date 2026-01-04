@@ -2,6 +2,7 @@
 SQLAlchemy ORM models for HKJC racing database
 香港賽馬會賽事資料庫 ORM 模型
 """
+
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -23,12 +24,14 @@ from sqlalchemy.sql import func
 
 class Base(DeclarativeBase):
     """Base class for all ORM models"""
+
     pass
 
 
 # ============================================================================
 # 賽日與賽事 (Meetings and Races)
 # ============================================================================
+
 
 class Meeting(Base):
     __tablename__ = "meeting"
@@ -73,7 +76,9 @@ class Race(Base):
     # Relationships
     meeting: Mapped["Meeting"] = relationship("Meeting", back_populates="races")
     runners: Mapped[list["Runner"]] = relationship("Runner", back_populates="race", cascade="all, delete-orphan")
-    horse_sectionals: Mapped[list["HorseSectional"]] = relationship("HorseSectional", back_populates="race", cascade="all, delete-orphan")
+    horse_sectionals: Mapped[list["HorseSectional"]] = relationship(
+        "HorseSectional", back_populates="race", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("meeting_id", "race_no", name="uq_race_meeting_raceno"),
@@ -88,6 +93,7 @@ class Race(Base):
 # 馬匹與 Profile（含歷史）(Horses and Profiles)
 # ============================================================================
 
+
 class Horse(Base):
     __tablename__ = "horse"
 
@@ -99,10 +105,16 @@ class Horse(Base):
     profile_url: Mapped[Optional[str]] = mapped_column(TEXT)
 
     # Relationships
-    profile: Mapped[Optional["HorseProfile"]] = relationship("HorseProfile", back_populates="horse", uselist=False, cascade="all, delete-orphan")
-    profile_history: Mapped[list["HorseProfileHistory"]] = relationship("HorseProfileHistory", back_populates="horse", cascade="all, delete-orphan")
+    profile: Mapped[Optional["HorseProfile"]] = relationship(
+        "HorseProfile", back_populates="horse", uselist=False, cascade="all, delete-orphan"
+    )
+    profile_history: Mapped[list["HorseProfileHistory"]] = relationship(
+        "HorseProfileHistory", back_populates="horse", cascade="all, delete-orphan"
+    )
     runners: Mapped[list["Runner"]] = relationship("Runner", back_populates="horse", cascade="all, delete-orphan")
-    sectionals: Mapped[list["HorseSectional"]] = relationship("HorseSectional", back_populates="horse", cascade="all, delete-orphan")
+    sectionals: Mapped[list["HorseSectional"]] = relationship(
+        "HorseSectional", back_populates="horse", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_horse_code", "code"),
@@ -117,7 +129,9 @@ class HorseProfile(Base):
     __tablename__ = "horse_profile"
 
     id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
-    horse_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("horse.id", ondelete="CASCADE"), unique=True, nullable=False)
+    horse_id: Mapped[int] = mapped_column(
+        BIGINT, ForeignKey("horse.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
     origin: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     age: Mapped[Optional[int]] = mapped_column(INT)
     colour: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
@@ -191,6 +205,7 @@ class HorseProfileHistory(Base):
 # 騎師與練馬師 (Jockeys and Trainers)
 # ============================================================================
 
+
 class Jockey(Base):
     __tablename__ = "jockey"
 
@@ -202,9 +217,7 @@ class Jockey(Base):
     # Relationships
     runners: Mapped[list["Runner"]] = relationship("Runner", back_populates="jockey")
 
-    __table_args__ = (
-        Index("idx_jockey_code", "code"),
-    )
+    __table_args__ = (Index("idx_jockey_code", "code"),)
 
     def __repr__(self) -> str:
         return f"<Jockey(id={self.id}, code={self.code}, name={self.name_cn})>"
@@ -221,9 +234,7 @@ class Trainer(Base):
     # Relationships
     runners: Mapped[list["Runner"]] = relationship("Runner", back_populates="trainer")
 
-    __table_args__ = (
-        Index("idx_trainer_code", "code"),
-    )
+    __table_args__ = (Index("idx_trainer_code", "code"),)
 
     def __repr__(self) -> str:
         return f"<Trainer(id={self.id}, code={self.code}, name={self.name_cn})>"
@@ -232,6 +243,7 @@ class Trainer(Base):
 # ============================================================================
 # 每場每馬成績與分段 (Runner Performance and Sectionals)
 # ============================================================================
+
 
 class Runner(Base):
     __tablename__ = "runner"
@@ -257,7 +269,9 @@ class Runner(Base):
     horse: Mapped["Horse"] = relationship("Horse", back_populates="runners")
     jockey: Mapped[Optional["Jockey"]] = relationship("Jockey", back_populates="runners")
     trainer: Mapped[Optional["Trainer"]] = relationship("Trainer", back_populates="runners")
-    sectionals: Mapped[list["HorseSectional"]] = relationship("HorseSectional", back_populates="runner", cascade="all, delete-orphan")
+    sectionals: Mapped[list["HorseSectional"]] = relationship(
+        "HorseSectional", back_populates="runner", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("race_id", "horse_id", name="uq_runner_race_horse"),
