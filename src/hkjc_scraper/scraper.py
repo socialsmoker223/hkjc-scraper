@@ -7,6 +7,9 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from hkjc_scraper.config import config
+from hkjc_scraper.exceptions import ParseError
+from hkjc_scraper.http_utils import HTTPSession, rate_limited, retry_on_network_error
 from hkjc_scraper.validators import validate_horse_profiles, validate_meeting, validate_race, validate_runners
 
 BASE = "https://racing.hkjc.com/zh-hk/local/information"
@@ -18,15 +21,22 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------------------------
 
 
-def list_race_urls_for_meeting_all_courses(date_ymd: str):
+@retry_on_network_error
+@rate_limited(config.RATE_LIMIT_RACE)
+def list_race_urls_for_meeting_all_courses(date_ymd: str, session: HTTPSession):
     """
     給一個賽日 (YYYY/MM/DD)，從 ResultsAll 抓該日所有場地、所有場次的 LocalResults 連結，
     並回傳其 Racecourse (ST/HV) 與 RaceNo。
 
-    回傳: list[{'url': full_localresults_url, 'racecourse': 'ST' or 'HV', 'race_no': int}]
+    Args:
+        date_ymd: Race date in YYYY/MM/DD format
+        session: HTTPSession instance for making requests
+
+    Returns:
+        list[{'url': full_localresults_url, 'racecourse': 'ST' or 'HV', 'race_no': int}]
     """
     url = f"{BASE}/resultsall?racedate={date_ymd}"
-    resp = requests.get(url, timeout=15)
+    resp = session.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -68,34 +78,49 @@ def list_race_urls_for_meeting_all_courses(date_ymd: str):
 
 
 def parse_race_header(info_table: BeautifulSoup):
-    rows = info_table.find_all("tr")
+    """
+    Parse race header information with safe DOM navigation
 
-    # 第 1 列: 「第 X 場 (284)」
-    first = rows[0].get_text(" ", strip=True)
-    m_no = re.search(r"第\s*(\d+)\s*場", first)
-    race_no = int(m_no.group(1)) if m_no else None
-    race_no = int(m_no.group(1)) if m_no else None
-    m_code = re.search(r"\((\d+)\)", first)
-    race_code = int(m_code.group(1)) if m_code else None  # Parse as INT
+    Raises:
+        ParseError: If critical fields cannot be parsed
+    """
+    try:
+        rows = info_table.find_all("tr")
 
-    # Extract race class from specific HTML element path
-    # VERIFIED with browser inspection: class info is ALWAYS in row 2, cell 0
-    # Table structure:
-    #   Row 0: Race number (e.g., "第 1 場 (45)")
-    #   Row 1: Empty row
-    #   Row 2, Cell 0: Class + distance (e.g., "第五班 - 1200米 - (40-0)" or "三級賽 - 1400米")
-    #   Row 3: Race name
-    race_class_cell = rows[2].find_all("td")[0] if len(rows) > 2 else None
-    if race_class_cell:
-        cell_text = race_class_cell.get_text(strip=True)
-        # Split by " - " and take first part (class is before distance)
-        # Verified examples from actual HKJC pages:
-        #   "第五班 - 1200米 - (40-0)" → "第五班"
-        #   "三級賽 - 1400米" → "三級賽"
-        #   "第十一班 - 1400米" → "第十一班"
-        race_class = cell_text.split(" - ")[0].strip()
-    else:
-        race_class = None
+        # Validate minimum row count
+        if len(rows) < 3:
+            raise ParseError(f"Insufficient rows in race header: expected 3+, got {len(rows)}")
+
+        # 第 1 列: 「第 X 場 (284)」
+        first = rows[0].get_text(" ", strip=True)
+        m_no = re.search(r"第\s*(\d+)\s*場", first)
+        race_no = int(m_no.group(1)) if m_no else None
+        m_code = re.search(r"\((\d+)\)", first)
+        race_code = int(m_code.group(1)) if m_code else None  # Parse as INT
+
+        # Extract race class from specific HTML element path
+        # VERIFIED with browser inspection: class info is ALWAYS in row 2, cell 0
+        # Table structure:
+        #   Row 0: Race number (e.g., "第 1 場 (45)")
+        #   Row 1: Empty row
+        #   Row 2, Cell 0: Class + distance (e.g., "第五班 - 1200米 - (40-0)" or "三級賽 - 1400米")
+        #   Row 3: Race name
+        tds = rows[2].find_all("td")
+        if not tds:
+            logger.warning("No cells found in row 2, race_class will be None")
+            race_class = None
+        else:
+            race_class_cell = tds[0]
+            cell_text = race_class_cell.get_text(strip=True)
+            # Split by " - " and take first part (class is before distance)
+            # Verified examples from actual HKJC pages:
+            #   "第五班 - 1200米 - (40-0)" → "第五班"
+            #   "三級賽 - 1400米" → "三級賽"
+            #   "第十一班 - 1400米" → "第十一班"
+            race_class = cell_text.split(" - ")[0].strip() if cell_text else None
+    except (IndexError, AttributeError) as e:
+        logger.error(f"Failed to parse race header: {e}")
+        raise ParseError(f"Race header parsing failed: {e}")
 
     header_text = " ".join(r.get_text(" ", strip=True) for r in rows[1:5])
 
@@ -184,12 +209,22 @@ def parse_trainer_link(a_tag):
     return code, name_cn
 
 
-def scrape_race_page(local_url: str, venue_code: str = None):
+@retry_on_network_error
+@rate_limited(config.RATE_LIMIT_RACE)
+def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = None):
     """
     解析一場 LocalResults：
       meeting, race, horses, jockeys, trainers, runners
+
+    Args:
+        local_url: URL to LocalResults page
+        session: HTTPSession instance for making requests
+        venue_code: Venue code (ST/HV), optional
+
+    Returns:
+        dict with meeting, race, horses, jockeys, trainers, runners data
     """
-    resp = requests.get(local_url, timeout=15)
+    resp = session.get(local_url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -226,9 +261,15 @@ def scrape_race_page(local_url: str, venue_code: str = None):
         "season": season_start_year,
     }
 
-    # Race header
+    # Race header - with safe DOM navigation
     header_cell = soup.find("td", string=re.compile(r"第\s*\d+\s*場"))
+    if not header_cell:
+        raise ParseError("Could not find race header cell (第 X 場)")
+
     info_table = header_cell.find_parent("table")
+    if not info_table:
+        raise ParseError("Could not find race info table")
+
     race = parse_race_header(info_table)
     race["localresults_url"] = local_url
     race["sectional_url"] = None  # 由 scrape_meeting 補
@@ -390,17 +431,26 @@ def scrape_race_page(local_url: str, venue_code: str = None):
 # -------------------------------------------------------------------
 
 
-def scrape_horse_profile(hkjc_horse_id: str):
+@retry_on_network_error
+@rate_limited(config.RATE_LIMIT_DETAIL)
+def scrape_horse_profile(hkjc_horse_id: str, session: HTTPSession):
     """
     給一個 HKJC horse id（例如 'HK_2023_J344'），抓馬匹資料頁中的 horseProfile 區塊。
     回傳一份 profile snapshot dict（欄位對齊 horse_profile 表）。
+
+    Args:
+        hkjc_horse_id: HKJC horse ID (e.g., 'HK_2023_J344')
+        session: HTTPSession instance for making requests
+
+    Returns:
+        dict with horse profile data
 
     HTML structure: Uses <dl> definition list with <dt> labels and <dd> values.
     """
     from datetime import datetime
 
     url = f"{BASE}/horse?horseid={hkjc_horse_id}"
-    resp = requests.get(url, timeout=15)
+    resp = session.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -555,17 +605,22 @@ def scrape_horse_profile(hkjc_horse_id: str):
 # -------------------------------------------------------------------
 
 
-def scrape_sectional_time(date_dmy: str, race_no: int):
+@retry_on_network_error
+@rate_limited(config.RATE_LIMIT_DETAIL)
+def scrape_sectional_time(date_dmy: str, race_no: int, session: HTTPSession):
     """
-    date_dmy: '23/12/2025'
-    回傳:
-      {
-        'horse_sectionals': [...]
-      }
-    只保留馬匹級分段。
+    抓取分段時間資料
+
+    Args:
+        date_dmy: Date in DD/MM/YYYY format (e.g., '23/12/2025')
+        race_no: Race number
+        session: HTTPSession instance for making requests
+
+    Returns:
+        dict with horse_sectionals list
     """
     url = f"{BASE}/displaysectionaltime?racedate={date_dmy}&RaceNo={race_no}"
-    resp = requests.get(url, timeout=15)
+    resp = session.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -704,61 +759,63 @@ def scrape_meeting(date_ymd: str):
     Args:
         date_ymd: Race date in YYYY/MM/DD format
     """
-    race_links = list_race_urls_for_meeting_all_courses(date_ymd)
-    all_races = []
-    scraped_horse_ids = set()  # Track which horses we've already scraped to avoid duplicates
+    # Use HTTPSession context manager for connection pooling
+    with HTTPSession() as session:
+        race_links = list_race_urls_for_meeting_all_courses(date_ymd, session)
+        all_races = []
+        scraped_horse_ids = set()  # Track which horses we've already scraped to avoid duplicates
 
-    for item in race_links:
-        local_url = item["url"]
-        venue_code = item["racecourse"]  # ST / HV
-        print(f"Scraping race page: {local_url}")
-        race_data = scrape_race_page(local_url, venue_code=venue_code)
+        for item in race_links:
+            local_url = item["url"]
+            venue_code = item["racecourse"]  # ST / HV
+            print(f"Scraping race page: {local_url}")
+            race_data = scrape_race_page(local_url, session, venue_code=venue_code)
 
-        date_dmy = race_data["meeting"]["date_dmy"]
-        race_no = race_data["race"]["race_no"]
+            date_dmy = race_data["meeting"]["date_dmy"]
+            race_no = race_data["race"]["race_no"]
 
-        sectional_url = f"{BASE}/displaysectionaltime?racedate={date_dmy}&RaceNo={race_no}"
-        race_data["race"]["sectional_url"] = sectional_url
+            sectional_url = f"{BASE}/displaysectionaltime?racedate={date_dmy}&RaceNo={race_no}"
+            race_data["race"]["sectional_url"] = sectional_url
 
-        print(f"  Scraping sectional: date={date_dmy}, race_no={race_no}")
-        sectional = scrape_sectional_time(date_dmy, race_no)
+            print(f"  Scraping sectional: date={date_dmy}, race_no={race_no}")
+            sectional = scrape_sectional_time(date_dmy, race_no, session)
 
-        race_data["horse_sectionals"] = sectional["horse_sectionals"]
+            race_data["horse_sectionals"] = sectional["horse_sectionals"]
 
-        # Scrape horse profiles for all horses in this race
-        horse_profiles = []
-        for horse in race_data["horses"]:
-            hkjc_horse_id = horse.get("hkjc_horse_id")
-            if hkjc_horse_id and hkjc_horse_id not in scraped_horse_ids:
-                print(f"    Scraping horse profile: {hkjc_horse_id} ({horse.get('name_cn', 'N/A')})")
-                try:
-                    profile = scrape_horse_profile(hkjc_horse_id)
-                    profile["hkjc_horse_id"] = hkjc_horse_id  # Add ID for matching
-                    horse_profiles.append(profile)
-                    scraped_horse_ids.add(hkjc_horse_id)
-                except Exception as e:
-                    print(f"      Warning: Failed to scrape profile for {hkjc_horse_id}: {e}")
+            # Scrape horse profiles for all horses in this race
+            horse_profiles = []
+            for horse in race_data["horses"]:
+                hkjc_horse_id = horse.get("hkjc_horse_id")
+                if hkjc_horse_id and hkjc_horse_id not in scraped_horse_ids:
+                    print(f"    Scraping horse profile: {hkjc_horse_id} ({horse.get('name_cn', 'N/A')})")
+                    try:
+                        profile = scrape_horse_profile(hkjc_horse_id, session)
+                        profile["hkjc_horse_id"] = hkjc_horse_id  # Add ID for matching
+                        horse_profiles.append(profile)
+                        scraped_horse_ids.add(hkjc_horse_id)
+                    except Exception as e:
+                        print(f"      Warning: Failed to scrape profile for {hkjc_horse_id}: {e}")
 
-        # VALIDATION: Validate profiles before adding to race_data
-        if horse_profiles:
-            profiles_validation = validate_horse_profiles(horse_profiles)
+            # VALIDATION: Validate profiles before adding to race_data
+            if horse_profiles:
+                profiles_validation = validate_horse_profiles(horse_profiles)
 
-            if profiles_validation.invalid_count > 0:
-                logger.warning(
-                    f"Skipped {profiles_validation.invalid_count}/{profiles_validation.total_count} "
-                    "invalid horse profiles"
-                )
+                if profiles_validation.invalid_count > 0:
+                    logger.warning(
+                        f"Skipped {profiles_validation.invalid_count}/{profiles_validation.total_count} "
+                        "invalid horse profiles"
+                    )
 
-            race_data["horse_profiles"] = profiles_validation.valid_records
-            race_data["validation_summary"]["profiles_total"] = profiles_validation.total_count
-            race_data["validation_summary"]["profiles_valid"] = profiles_validation.valid_count
-            race_data["validation_summary"]["profiles_invalid"] = profiles_validation.invalid_count
-        else:
-            race_data["horse_profiles"] = []
+                race_data["horse_profiles"] = profiles_validation.valid_records
+                race_data["validation_summary"]["profiles_total"] = profiles_validation.total_count
+                race_data["validation_summary"]["profiles_valid"] = profiles_validation.valid_count
+                race_data["validation_summary"]["profiles_invalid"] = profiles_validation.invalid_count
+            else:
+                race_data["horse_profiles"] = []
 
-        all_races.append(race_data)
+            all_races.append(race_data)
 
-    return all_races
+        return all_races
 
 
 # -------------------------------------------------------------------
