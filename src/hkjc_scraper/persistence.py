@@ -3,10 +3,12 @@ Data persistence layer with UPSERT operations
 資料持久化層，提供 UPSERT 操作
 """
 
+import logging
 from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from hkjc_scraper.models import (
@@ -20,6 +22,8 @@ from hkjc_scraper.models import (
     Runner,
     Trainer,
 )
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Meeting and Race persistence
@@ -363,109 +367,124 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary with saved object IDs
     """
-    result = {}
+    try:
+        result = {}
 
-    # 1. Save meeting
-    meeting = upsert_meeting(db, race_data["meeting"])
-    result["meeting_id"] = meeting.id
+        # 1. Save meeting
+        meeting = upsert_meeting(db, race_data["meeting"])
+        result["meeting_id"] = meeting.id
 
-    # 2. Save race (with meeting_id)
-    race_dict = race_data["race"].copy()
-    race_dict["meeting_id"] = meeting.id
-    race = upsert_race(db, race_dict)
-    result["race_id"] = race.id
+        # 2. Save race (with meeting_id)
+        race_dict = race_data["race"].copy()
+        race_dict["meeting_id"] = meeting.id
+        race = upsert_race(db, race_dict)
+        result["race_id"] = race.id
 
-    # 3. Save horses and create code -> horse_id mapping
-    horse_map = {}  # code -> horse_id
-    for horse_data in race_data["horses"]:
-        horse = upsert_horse(db, horse_data)
-        horse_map[horse.code] = horse.id
+        # 3. Save horses and create code -> horse_id mapping
+        horse_map = {}  # code -> horse_id
+        for horse_data in race_data["horses"]:
+            horse = upsert_horse(db, horse_data)
+            horse_map[horse.code] = horse.id
 
-    # 4. Save jockeys and create code -> jockey_id mapping
-    jockey_map = {}  # code -> jockey_id
-    for jockey_data in race_data["jockeys"]:
-        jockey = upsert_jockey(db, jockey_data)
-        jockey_map[jockey.code] = jockey.id
+        # 4. Save jockeys and create code -> jockey_id mapping
+        jockey_map = {}  # code -> jockey_id
+        for jockey_data in race_data["jockeys"]:
+            jockey = upsert_jockey(db, jockey_data)
+            jockey_map[jockey.code] = jockey.id
 
-    # 5. Save trainers and create code -> trainer_id mapping
-    trainer_map = {}  # code -> trainer_id
-    for trainer_data in race_data["trainers"]:
-        trainer = upsert_trainer(db, trainer_data)
-        trainer_map[trainer.code] = trainer.id
+        # 5. Save trainers and create code -> trainer_id mapping
+        trainer_map = {}  # code -> trainer_id
+        for trainer_data in race_data["trainers"]:
+            trainer = upsert_trainer(db, trainer_data)
+            trainer_map[trainer.code] = trainer.id
 
-    # 6. Save runners (with FK resolution)
-    runner_map = {}  # horse_code -> runner_id
-    for runner_data in race_data["runners"]:
-        runner_dict = runner_data.copy()
+        # 6. Save runners (with FK resolution)
+        runner_map = {}  # horse_code -> runner_id
+        for runner_data in race_data["runners"]:
+            runner_dict = runner_data.copy()
 
-        # Resolve foreign keys
-        runner_dict["race_id"] = race.id
-        runner_dict["horse_id"] = horse_map[runner_data["horse_code"]]
-        runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_code"))
-        runner_dict["trainer_id"] = trainer_map.get(runner_data.get("trainer_code"))
+            # Resolve foreign keys
+            runner_dict["race_id"] = race.id
+            runner_dict["horse_id"] = horse_map[runner_data["horse_code"]]
+            runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_code"))
+            runner_dict["trainer_id"] = trainer_map.get(runner_data.get("trainer_code"))
 
-        # Remove code fields (not in Runner model)
-        runner_dict.pop("horse_code", None)
-        runner_dict.pop("jockey_code", None)
-        runner_dict.pop("trainer_code", None)
+            # Remove code fields (not in Runner model)
+            runner_dict.pop("horse_code", None)
+            runner_dict.pop("jockey_code", None)
+            runner_dict.pop("trainer_code", None)
 
-        runner = upsert_runner(db, runner_dict)
-        runner_map[runner_data["horse_code"]] = runner.id
+            runner = upsert_runner(db, runner_dict)
+            runner_map[runner_data["horse_code"]] = runner.id
 
-    result["runner_count"] = len(runner_map)
+        result["runner_count"] = len(runner_map)
 
-    # 7. Save horse sectionals (with FK resolution)
-    sectional_count = 0
-    for sectional_data in race_data.get("horse_sectionals", []):
-        sectional_dict = sectional_data.copy()
+        # 7. Save horse sectionals (with FK resolution)
+        sectional_count = 0
+        for sectional_data in race_data.get("horse_sectionals", []):
+            sectional_dict = sectional_data.copy()
 
-        # Resolve foreign keys
-        horse_code = sectional_data["horse_code"]
-        sectional_dict["race_id"] = race.id
-        sectional_dict["horse_id"] = horse_map[horse_code]
-        sectional_dict["runner_id"] = runner_map[horse_code]
+            # Resolve foreign keys
+            horse_code = sectional_data["horse_code"]
+            sectional_dict["race_id"] = race.id
+            sectional_dict["horse_id"] = horse_map[horse_code]
+            sectional_dict["runner_id"] = runner_map[horse_code]
 
-        # Remove code field
-        sectional_dict.pop("horse_code", None)
+            # Remove code field
+            sectional_dict.pop("horse_code", None)
 
-        upsert_horse_sectional(db, sectional_dict)
-        sectional_count += 1
+            upsert_horse_sectional(db, sectional_dict)
+            sectional_count += 1
 
-    result["sectional_count"] = sectional_count
+        result["sectional_count"] = sectional_count
 
-    # 8. Save horse profiles (if provided)
-    profile_count = 0
-    for profile_data in race_data.get("horse_profiles", []):
-        # Match profile to horse by hkjc_horse_id
-        hkjc_horse_id = profile_data.get("hkjc_horse_id")
-        if not hkjc_horse_id:
-            continue
+        # 8. Save horse profiles (if provided)
+        profile_count = 0
+        for profile_data in race_data.get("horse_profiles", []):
+            # Match profile to horse by hkjc_horse_id
+            hkjc_horse_id = profile_data.get("hkjc_horse_id")
+            if not hkjc_horse_id:
+                continue
 
-        # Find the horse_id for this hkjc_horse_id
-        horse_id = None
-        for code, h_id in horse_map.items():
-            # Find the horse object to get its hkjc_horse_id
-            for horse_data in race_data["horses"]:
-                if horse_data["code"] == code and horse_data.get("hkjc_horse_id") == hkjc_horse_id:
-                    horse_id = h_id
+            # Find the horse_id for this hkjc_horse_id
+            horse_id = None
+            for code, h_id in horse_map.items():
+                # Find the horse object to get its hkjc_horse_id
+                for horse_data in race_data["horses"]:
+                    if horse_data["code"] == code and horse_data.get("hkjc_horse_id") == hkjc_horse_id:
+                        horse_id = h_id
+                        break
+                if horse_id:
                     break
+
             if horse_id:
-                break
+                # Handle profile errors gracefully (non-critical)
+                try:
+                    profile_dict = profile_data.copy()
+                    profile_dict.pop("hkjc_horse_id", None)  # Remove matching field
 
-        if horse_id:
-            profile_dict = profile_data.copy()
-            profile_dict.pop("hkjc_horse_id", None)  # Remove matching field
+                    # Update current profile
+                    upsert_horse_profile(db, horse_id, profile_dict)
 
-            # Update current profile
-            upsert_horse_profile(db, horse_id, profile_dict)
+                    # Save to history (with current timestamp)
+                    insert_horse_profile_history(db, horse_id, profile_dict)
+                    profile_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save profile for horse_id {horse_id}: {e}")
+                    continue
 
-            # Save to history (with current timestamp)
-            insert_horse_profile_history(db, horse_id, profile_dict)
-            profile_count += 1
+        result["profile_count"] = profile_count
 
-    result["profile_count"] = profile_count
+        return result
 
-    return result
+    except IntegrityError as e:
+        logger.warning(f"Duplicate data detected (race already exists): {e}")
+        db.rollback()
+        return {"race_id": None, "runner_count": 0, "sectional_count": 0, "profile_count": 0}
+    except SQLAlchemyError as e:
+        logger.error(f"Database error saving race: {e}")
+        db.rollback()
+        raise
 
 
 def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[str, Any]:

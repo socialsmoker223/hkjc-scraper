@@ -115,7 +115,7 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 - [x] Add validation for critical fields (dates, race numbers, numeric values)
 - [x] Implement data quality checks:
   - [x] Finish positions should be 1, 2, 3... or special values (PU, DNF, etc.)
-  - [x] Weights validation (95-165 lbs for actual and declared)
+  - [x] Weights validation (95-165 lbs for actual and 900-1400 declared)
   - [x] Odds validation (must be positive)
   - [x] Distance validation (1000-2850 meters)
   - [x] Horse age validation (2-14 years)
@@ -135,6 +135,7 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 - ❌ No retry logic (network failures = immediate crash)
 - ❌ No rate limiting (could trigger HKJC rate limits)
 - ❌ HTTP errors bubble up with stack traces in some areas
+- ❌ No cloud database option (Supabase integration not implemented)
 
 ### 3.1 Error Handling & Resilience
 - [ ] **Wrap all HTTP requests with retry logic** (in hkjc_scraper.py)
@@ -210,6 +211,30 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 - [x] **Add --force flag to re-scrape existing data**
   - `python main.py 2025/12/23 --force`
   - Useful when HKJC updates results (e.g., inquiry changes)
+
+### 3.4 Supabase Integration
+**Goal:** Add Supabase as a cloud database option for easy deployment and real-time features
+
+- [ ] **Supabase connection support**
+  - [ ] Add Supabase configuration to `.env` (SUPABASE_URL, SUPABASE_KEY)
+  - [ ] Create Supabase client wrapper in `database.py`
+  - [ ] Support both local PostgreSQL and Supabase via config flag
+  - [ ] Update connection string builder to handle Supabase format
+- [ ] **Schema migration to Supabase**
+  - [ ] Export current schema to Supabase-compatible SQL
+  - [ ] Run Alembic migrations against Supabase database
+  - [ ] Verify all table relationships and indexes in Supabase dashboard
+  - [ ] Test UPSERT operations with Supabase (may need adjustments for RLS)
+- [ ] **Real-time features (optional)**
+  - [ ] Set up Supabase real-time subscriptions for data changes
+  - [ ] Enable Row-Level Security (RLS) policies for multi-user access
+  - [ ] Create public API views for read-only access
+- [ ] **Deployment benefits**
+  - [ ] No Docker/PostgreSQL setup required
+  - [ ] Automatic backups and point-in-time recovery
+  - [ ] Built-in authentication for future web interface
+  - [ ] Global CDN for faster access
+  - [ ] Free tier: 500MB database, 2GB bandwidth
 
 ---
 

@@ -29,7 +29,14 @@ class Config:
     # Scraping settings
     HKJC_BASE_URL = os.getenv("HKJC_BASE_URL", "https://racing.hkjc.com/racing/information/Chinese")
     REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
+    REQUEST_CONNECT_TIMEOUT = int(os.getenv("REQUEST_CONNECT_TIMEOUT", "5"))
     RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))
+
+    # Error handling & retry settings
+    RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
+    RETRY_BACKOFF_BASE = int(os.getenv("RETRY_BACKOFF_BASE", "2"))
+    RATE_LIMIT_RACE = float(os.getenv("RATE_LIMIT_RACE", "1.0"))
+    RATE_LIMIT_DETAIL = float(os.getenv("RATE_LIMIT_DETAIL", "0.5"))
 
     # Logging settings
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -4,18 +4,25 @@ Main script to scrape HKJC racing data and save to database
 """
 
 import argparse
+import logging
 import sys
 from datetime import datetime, timedelta
 
+import requests
+from sqlalchemy.exc import SQLAlchemyError
 from tqdm import tqdm
 
+from hkjc_scraper.config import config
 from hkjc_scraper.database import check_connection, get_db, init_db
+from hkjc_scraper.exceptions import ParseError
 from hkjc_scraper.persistence import (
     check_meeting_exists,
     get_max_meeting_date,
     save_meeting_data,
 )
 from hkjc_scraper.scraper import scrape_meeting
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -218,14 +225,41 @@ def main():
                     print(msg)
                 success_count += 1
 
-        except Exception as e:
+        except requests.RequestException as e:
             error_count += 1
-            msg = f"Error scraping {date_ymd}: {str(e)}"
+            logger.error(f"Network error scraping {date_ymd}: {e}")
+            msg = f"Network error for {date_ymd} (check connection)"
             if len(dates_to_scrape) > 1:
                 tqdm.write(msg)
             else:
                 print(msg)
-            # Continue to next date instead of crashing entire batch
+            continue
+        except ParseError as e:
+            error_count += 1
+            logger.error(f"Parse error for {date_ymd}: {e}")
+            msg = f"Parse error for {date_ymd} (HKJC site may have changed)"
+            if len(dates_to_scrape) > 1:
+                tqdm.write(msg)
+            else:
+                print(msg)
+            continue
+        except SQLAlchemyError as e:
+            error_count += 1
+            logger.error(f"Database error for {date_ymd}: {e}")
+            msg = f"Database error for {date_ymd} (check DB connection)"
+            if len(dates_to_scrape) > 1:
+                tqdm.write(msg)
+            else:
+                print(msg)
+            continue
+        except Exception as e:
+            error_count += 1
+            logger.exception(f"Unexpected error for {date_ymd}: {e}")
+            msg = f"Unexpected error for {date_ymd}: {str(e)}"
+            if len(dates_to_scrape) > 1:
+                tqdm.write(msg)
+            else:
+                print(msg)
             continue
 
     # Final summary
@@ -236,6 +270,8 @@ def main():
     print(f"Successfully scraped: {success_count}")
     print(f"Skipped (existing):   {skip_count}")
     print(f"Errors:               {error_count}")
+    if error_count > 0:
+        print(f"\nCheck {config.LOG_FILE} for error details")
     print(f"{'=' * 60}\n")
 
 
