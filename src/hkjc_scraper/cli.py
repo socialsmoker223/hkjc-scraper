@@ -32,7 +32,12 @@ def main():
     group.add_argument(
         "--init-db",
         action="store_true",
-        help="Initialize database tables before scraping",
+        help="Initialize database tables (legacy, uses SQLAlchemy create_all)",
+    )
+    group.add_argument(
+        "--migrate",
+        action="store_true",
+        help="Run database migrations (uses Alembic, recommended)",
     )
     group.add_argument("--date-range", nargs=2, metavar=("START", "END"), help="Scrape a range of dates (YYYY/MM/DD)")
     group.add_argument(
@@ -65,8 +70,16 @@ def main():
 
     # Initialize database if requested
     if args.init_db:
-        print("\nInitializing database tables...")
+        print("\nInitializing database tables (legacy mode)...")
         init_db()
+        sys.exit(0)
+
+    # Run migrations if requested
+    if args.migrate:
+        print("\nRunning database migrations...")
+        from hkjc_scraper.database import migrate_db
+
+        migrate_db(command="upgrade", revision="head")
         sys.exit(0)
 
     # Determine dates to scrape
@@ -188,7 +201,17 @@ def main():
                 with get_db() as db:
                     summary = save_meeting_data(db, meeting_data)
 
+                # Collect validation stats
+                total_invalid = sum(
+                    race.get("validation_summary", {}).get("runners_invalid", 0)
+                    + race.get("validation_summary", {}).get("profiles_invalid", 0)
+                    for race in meeting_data
+                )
+
                 msg = f"Saved {date_ymd}: {summary['races_saved']} races, {summary['runners_saved']} runners"
+                if total_invalid > 0:
+                    msg += f" (skipped {total_invalid} invalid records)"
+
                 if len(dates_to_scrape) > 1:
                     tqdm.write(msg)
                 else:

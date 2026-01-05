@@ -6,16 +6,11 @@ A Python web scraper that collects horse racing data from the Hong Kong Jockey C
 website and stores it in a PostgreSQL database.
 """
 
-__version__ = "0.1.0"
+import logging
+import sys
 
-# Export main scraping function
-# Export config
 from hkjc_scraper.config import config
-
-# Export database functions
 from hkjc_scraper.database import check_connection, get_db, init_db
-
-# Export models
 from hkjc_scraper.models import (
     Base,
     Horse,
@@ -28,10 +23,23 @@ from hkjc_scraper.models import (
     Runner,
     Trainer,
 )
-
-# Export persistence functions
 from hkjc_scraper.persistence import save_meeting_data
 from hkjc_scraper.scraper import scrape_meeting
+
+__version__ = "0.1.0"
+
+
+def setup_logging(level=logging.INFO):
+    """Setup package-level logging"""
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("hkjc_scraper.log", encoding="utf-8")],
+    )
+
+
+# Setup logging on import
+setup_logging()
 
 __all__ = [
     "__version__",
