@@ -45,6 +45,50 @@ def drop_db():
     print("Database tables dropped")
 
 
+def migrate_db(command: str = "upgrade", revision: str = "head"):
+    """
+    運行 Alembic 遷移
+    Run Alembic migrations programmatically
+
+    Args:
+        command: Alembic command ('upgrade', 'downgrade', 'current', 'history')
+        revision: Target revision (default: 'head' for latest)
+
+    Examples:
+        migrate_db()                    # Upgrade to latest
+        migrate_db("current")           # Show current revision
+        migrate_db("downgrade", "-1")   # Downgrade one revision
+    """
+    from pathlib import Path
+
+    from alembic.config import Config
+
+    from alembic import command as alembic_command
+
+    # Get project root (database.py is in src/hkjc_scraper/)
+    project_root = Path(__file__).resolve().parents[2]
+    alembic_ini = project_root / "alembic.ini"
+
+    if not alembic_ini.exists():
+        raise FileNotFoundError(f"Alembic config not found at {alembic_ini}. Run 'alembic init alembic' first.")
+
+    alembic_cfg = Config(str(alembic_ini))
+
+    # Execute command
+    if command == "upgrade":
+        alembic_command.upgrade(alembic_cfg, revision)
+        print(f"Database migrated to revision: {revision}")
+    elif command == "downgrade":
+        alembic_command.downgrade(alembic_cfg, revision)
+        print(f"Database downgraded to revision: {revision}")
+    elif command == "current":
+        alembic_command.current(alembic_cfg)
+    elif command == "history":
+        alembic_command.history(alembic_cfg)
+    else:
+        raise ValueError(f"Unknown command: {command}")
+
+
 @contextmanager
 def get_db() -> Generator[Session, None, None]:
     """

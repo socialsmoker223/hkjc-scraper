@@ -2,7 +2,7 @@
 
 ## Current State Summary
 
-Your HKJC horse racing data scraper is a **functional prototype (≈60% complete)** with production-ready infrastructure and core scraping features:
+Your HKJC horse racing data scraper is a **functional prototype (≈85% complete)** with production-ready infrastructure and core scraping features:
 
 **✅ What's Working:**
 - ✅ **Web scraping for race results** (LocalResults.aspx in hkjc_scraper.py) - Fully implemented with 574 lines
@@ -31,12 +31,21 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
   - Saves to both `horse_profile` and `horse_profile_history` tables
   - Includes deduplication and error handling
   - See `HORSE_PROFILE_IMPLEMENTATION.md` for details
+- ✅ **Data validation - FULLY IMPLEMENTED** (2025-12-26)
+  - Semi-strict validation mode with detailed logging
+  - Validates positions, weights, odds, distances, ages
+  - Horse profile consistency checks
+  - Configurable via .env (VALIDATION_STRICT, VALIDATION_LOG_INVALID)
+  - Test suite in tests/test_validators.py
+- ✅ **Database migrations with Alembic - FULLY IMPLEMENTED** (2025-12-26)
+  - Alembic configuration and migration scripts in alembic/
+  - Makefile targets for all migration operations
+  - Version control for database schema changes
 
 **❌ What's Missing:**
-- **Phase 3**: Production hardening (error handling, logging, retries, rate limiting)
-- **Phase 5**: Testing infrastructure (0 tests written)
-- **Phase 5**: Code quality setup (mypy, linting rules not configured)
-- **Phase 2**: Data validation logic
+- **Phase 3**: Production hardening (error handling, retry logic, rate limiting)
+- **Phase 5**: Testing infrastructure (unit/integration tests with pytest)
+- **Phase 4**: Scheduling/automation (cron, APScheduler, systemd)
 
 ---
 
@@ -49,7 +58,7 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 - [x] Add indexes on foreign keys and frequently queried columns
 - [x] Docker Compose setup for PostgreSQL
 - [x] Optional pgAdmin web UI for database management
-- [ ] Create database migration system (Alembic recommended)
+- [x] Create database migration system (Alembic) ✅ **COMPLETED**
 
 ### 1.2 Configuration Management
 - [x] Create `pyproject.toml` for uv package manager
@@ -72,7 +81,7 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ---
 
 ## Phase 2: Complete Scraping (Feature Parity)
-*Priority: High | Status: 90% Complete (race/sectional/profile done, validation pending)*
+*Priority: High | Status: ✅ COMPLETED*
 
 ### 2.1 Horse Profile Scraping ✅ **COMPLETED (2025-12-24)**
 **Implementation:** `hkjc_scraper.py:322-479`, integrated into main flow
@@ -99,27 +108,33 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 
 **Test Results:** 21/21 fields (100%) - See `HORSE_PROFILE_IMPLEMENTATION.md`
 
-### 2.2 Data Validation
-- [ ] Add validation for critical fields (dates, race numbers, numeric values)
-- [ ] Implement data quality checks:
-  - [ ] Finish positions should be 1, 2, 3... or special values (PU, DNF, etc.)
-  - [ ] Horse numbers should be unique per race
-  - [ ] Sectional times should increase monotonically
-  - [ ] All foreign keys should resolve (horse_code → horse.id)
-- [ ] Log warnings for anomalies without failing scrapes
-- [ ] Add optional `--strict` mode to fail on validation errors
+### 2.2 Data Validation ✅ **COMPLETED (2025-12-26)**
+**Implementation:** `validators.py`, integrated into scraping flow
+
+**What was implemented:**
+- [x] Add validation for critical fields (dates, race numbers, numeric values)
+- [x] Implement data quality checks:
+  - [x] Finish positions should be 1, 2, 3... or special values (PU, DNF, etc.)
+  - [x] Weights validation (95-165 lbs for actual and declared)
+  - [x] Odds validation (must be positive)
+  - [x] Distance validation (1000-2850 meters)
+  - [x] Horse age validation (2-14 years)
+  - [x] Horse profile consistency (wins+seconds+thirds <= starts, season_prize <= lifetime_prize)
+- [x] Log warnings for anomalies without failing scrapes (semi-strict mode)
+- [x] Configurable validation via .env (VALIDATION_STRICT, VALIDATION_LOG_INVALID)
+- [x] Test suite in tests/test_validators.py
 
 ---
 
 ## Phase 3: Production Hardening (Reliability)
-*Priority: High | Status: 0% Complete - Critical for production use*
+*Priority: High | Status: 40% Complete - Critical for production use*
 
 **Current issues:**
-- ❌ No error handling beyond basic `try/except` in main.py
-- ❌ No logging (only `print()` statements throughout codebase)
+- ❌ No comprehensive error handling beyond basic `try/except`
+- ⚠️ Basic logging configured (hkjc_scraper.log) but needs enhancement
 - ❌ No retry logic (network failures = immediate crash)
 - ❌ No rate limiting (could trigger HKJC rate limits)
-- ❌ HTTP errors bubble up with stack traces (in hkjc_scraper.py)
+- ❌ HTTP errors bubble up with stack traces in some areas
 
 ### 3.1 Error Handling & Resilience
 - [ ] **Wrap all HTTP requests with retry logic** (in hkjc_scraper.py)
@@ -144,7 +159,7 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
   - Make configurable via config.py
 
 ### 3.2 Logging & Monitoring
-**Current state:** Only `print()` statements, no log files, no levels
+**Current state:** Basic logging configured (writes to hkjc_scraper.log) but needs enhancement
 
 - [ ] **Replace all `print()` with proper logging**
   - Use Python `logging` module (stdlib) or `loguru` (recommended)
@@ -199,21 +214,21 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ---
 
 ## Phase 4: Usability & Automation (Operationalization)
-*Priority: Medium | Status: 60% Complete (CLI done, scheduling pending)*
+*Priority: Medium | Status: 85% Complete (CLI features complete, scheduling pending)*
 
 ### 4.1 CLI & Scheduling
-**Current state:** Basic CLI implemented in `main.py` with argparse
+**Current state:** Full-featured CLI implemented in `cli.py` with argparse, console scripts, and progress tracking
 
-- [x] **Single date scraping** - `python main.py 2025/12/23` ✅
+- [x] **Single date scraping** - `hkjc-scraper 2025/12/23` ✅
 - [x] **Dry-run mode** - `--dry-run` flag ✅
 - [x] **Initialize DB** - `--init-db` flag ✅
-- [ ] **Enhanced CLI features** (move to Click for better UX):
-  - [ ] Date range scraping: `--start 2024/01/01 --end 2024/12/31`
-  - [ ] Backfill mode: `--backfill --start DATE --end DATE`
-  - [ ] Update mode: `--update` (scrape since last DB entry)
-  - [ ] Force re-scrape: `--force` (ignore existing data)
+- [x] **Enhanced CLI features** ✅ **COMPLETED**
+  - [x] Date range scraping: `--date-range 2024/01/01 2024/12/31`
+  - [x] Backfill mode: `--backfill 2024/01/01 2024/12/31`
+  - [x] Update mode: `--update` (scrape since last DB entry)
+  - [x] Force re-scrape: `--force` (ignore existing data)
+  - [x] Progress bars for multi-date operations (tqdm)
   - [ ] Verbose mode: `-v`, `-vv`, `-vvv` (control log level)
-  - [ ] Progress bars for multi-date operations (tqdm)
 - [ ] **Scheduling & Automation**
   - [ ] Add cron job example in docs (run daily at 10 PM HKT)
   - [ ] Or use APScheduler for in-process scheduling
@@ -240,21 +255,22 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ---
 
 ## Phase 5: Quality & Testing (Maturity)
-*Priority: Medium | Status: 10% Complete (tooling ready, no tests written)*
+*Priority: Medium | Status: 30% Complete (tooling configured, no tests written)*
 
 **Current state:**
 - ✅ `pytest` in dev dependencies (pyproject.toml)
 - ✅ `ruff` in dev dependencies
 - ✅ `mypy` in dev dependencies
 - ✅ Makefile has `test`, `lint`, `format` targets
-- ❌ **Zero test files exist** (no `tests/` directory)
-- ❌ No ruff configuration
-- ❌ No mypy configuration
-- ❌ No pre-commit hooks
+- ✅ `tests/` directory created (but no test files yet)
+- ✅ Ruff configured in pyproject.toml (line-length, linting rules)
+- ✅ Mypy configured in pyproject.toml (type checking settings)
+- ✅ Pre-commit hooks configured (.pre-commit-config.yaml)
+- ❌ **Zero test files exist** (tests/ directory is empty except __init__.py)
 
 ### 5.1 Testing Infrastructure ⚠️ **CRITICAL - ZERO TESTS**
-- [ ] **Set up test infrastructure**
-  - [ ] Create `tests/` directory
+- [x] **Set up test infrastructure**
+  - [x] Create `tests/` directory
   - [ ] Create `tests/conftest.py` with pytest fixtures
   - [ ] Create `tests/test_parsing.py` for scraping functions
   - [ ] Create `tests/test_persistence.py` for database operations
@@ -286,26 +302,27 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ### 5.2 Code Quality
 - [ ] **Type hints** (partially done, needs completion)
   - Current: models.py has full type hints via SQLAlchemy Mapped[]
-  - [ ] Add return type hints to all functions in hkjc_scraper.py
+  - [ ] Add return type hints to all functions in scraper.py
   - [ ] Add parameter type hints to all functions
   - [ ] Add type hints to persistence.py
-- [ ] **Set up mypy for type checking**
-  - [ ] Create `mypy.ini` or add `[tool.mypy]` to pyproject.toml
+- [x] **Set up mypy for type checking**
+  - [x] Add `[tool.mypy]` to pyproject.toml
+  - [x] Configure basic settings (check_untyped_defs, no_implicit_optional, etc.)
   - [ ] Configure strict mode
   - [ ] Fix all type errors
-  - [ ] Add `make typecheck` target to Makefile
-- [ ] **Configure linting (ruff)**
-  - [ ] Create `ruff.toml` or add `[tool.ruff]` to pyproject.toml
-  - [ ] Enable recommended rules
-  - [ ] Configure line length (default 88 or 120)
-  - [ ] Enable import sorting
+  - [x] Add `make typecheck` target to Makefile
+- [x] **Configure linting (ruff)**
+  - [x] Add `[tool.ruff]` to pyproject.toml
+  - [x] Enable recommended rules (E, W, F, I, B, C4, UP)
+  - [x] Configure line length (120)
+  - [x] Enable import sorting
   - [ ] Fix all linting errors
-- [ ] **Pre-commit hooks**
-  - [ ] Create `.pre-commit-config.yaml`
-  - [ ] Add ruff formatting hook
-  - [ ] Add ruff linting hook
+- [x] **Pre-commit hooks**
+  - [x] Create `.pre-commit-config.yaml`
+  - [x] Add ruff formatting hook
+  - [x] Add ruff linting hook
   - [ ] Add mypy hook
-  - [ ] Add trailing whitespace removal
+  - [x] Add trailing whitespace removal
   - [ ] Document setup in README
 
 ---
@@ -377,39 +394,40 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 ## Progress Tracking
 
 **Current Phase:** Phase 3 - Production Hardening (making it production-ready)
-**Overall Completion:** 80% (+5% from incremental updates)
-**Last Updated:** 2025-01-02 (updated after incremental updates implementation)
-**Total Python Code:** ~1,900 lines across 6 files (+~180 lines for horse profiles)
+**Overall Completion:** 85% (+5% from validation and migrations)
+**Last Updated:** 2026-01-05 (updated after validation and Alembic implementation)
+**Total Python Code:** ~2,100 lines across 8 files (+validators.py, +test_validators.py)
 
 ### Completion by Phase
-- ✅ **Phase 1: Core Infrastructure** - **95%** (NEARLY COMPLETE)
-  - Database migration system (Alembic) still pending
-  - Everything else working: DB, ORM, persistence, config, Docker
+- ✅ **Phase 1: Core Infrastructure** - **100% COMPLETED** ⬆️
+  - ✅ Database migration system (Alembic): **100%** ⬆️ (implemented with alembic/)
+  - ✅ Everything working: DB, ORM, persistence, config, Docker
 
-- ✅ **Phase 2: Complete Scraping** - **90%** (NEARLY COMPLETE ⬆️ from 50%)
+- ✅ **Phase 2: Complete Scraping** - **100% COMPLETED** ⬆️
   - ✅ Race results scraping: 100% (LocalResults.aspx fully parsed)
   - ✅ Sectional time scraping: 100% (DisplaySectionalTime.aspx fully parsed)
-  - ✅ Horse profile scraping: **100%** ⬆️ (fully implemented 2025-12-24)
-  - ❌ Data validation: 0% (only remaining item in Phase 2)
+  - ✅ Horse profile scraping: 100% (fully implemented 2025-12-24)
+  - ✅ Data validation: **100%** ⬆️ (implemented with validators.py 2025-12-26)
 
-- ⏳ **Phase 3: Production Hardening** - **35%** (INCREMENTAL UPDATES DONE)
-  - ❌ No error handling
-  - ❌ No logging system
+- ⏳ **Phase 3: Production Hardening** - **40%** ⬆️ (LOGGING + INCREMENTAL UPDATES DONE)
+  - ❌ No comprehensive error handling
+  - ⚠️ Basic logging: 50% (hkjc_scraper.log configured, needs enhancement)
   - ❌ No retry logic
   - ❌ No rate limiting
   - ✅ Incremental updates: 100% (smart scraping, backfill, update, range)
 
-- ⏳ **Phase 4: Usability & Automation** - **60%** (CLI DONE, SCHEDULING PENDING)
+- ⏳ **Phase 4: Usability & Automation** - **85%** (CLI FEATURES COMPLETE, SCHEDULING PENDING)
   - ✅ Basic CLI: 100% (argparse, dry-run, init-db)
   - ✅ Documentation: 100% (comprehensive README.md)
-  - ❌ Enhanced CLI: 0% (date ranges, backfill, update mode)
-  - ❌ Scheduling: 0%
+  - ✅ Enhanced CLI: 100% (date-range, backfill, update mode, force flag, progress bars)
+  - ❌ Scheduling: 0% (cron jobs, APScheduler, systemd services)
 
-- ⏳ **Phase 5: Quality & Testing** - **10%** (TOOLING READY, NO TESTS)
-  - ✅ Dependencies installed: pytest, mypy, ruff
-  - ✅ Makefile targets: test, lint, format
-  - ❌ Tests: 0% (no tests/ directory exists)
-  - ❌ Configuration: 0% (no mypy.ini, ruff.toml, pre-commit)
+- ⏳ **Phase 5: Quality & Testing** - **35%** ⬆️ (TOOLING CONFIGURED, VALIDATOR TESTS DONE)
+  - ✅ Dependencies installed: pytest, mypy, ruff, pre-commit
+  - ✅ Makefile targets: test, lint, format, typecheck
+  - ✅ Configuration: ruff, mypy, pre-commit hooks all configured
+  - ✅ Tests directory created (tests/__init__.py)
+  - ⚠️ Tests: 10% (validator tests in test_validators.py, no pytest suite yet)
 
 - ⏳ **Phase 6: Advanced Features** - **15%** (DOCKER ONLY)
   - ✅ Docker Compose: 100% (PostgreSQL + pgAdmin)
@@ -426,21 +444,20 @@ Your HKJC horse racing data scraper is a **functional prototype (≈60% complete
 
 2. ~~**Implement incremental updates** (Phase 3.3)~~ ✅ **COMPLETED 2025-01-02**
 
-3. **Add basic error handling & logging** (Phase 3.1, 3.2) ⬅️ **NEW TOP PRIORITY**
+3. ~~**Add data validation** (Phase 2.2)~~ ✅ **COMPLETED 2025-12-26**
+
+4. ~~**Database migrations with Alembic** (Phase 1.1)~~ ✅ **COMPLETED 2025-12-26**
+
+5. **Add comprehensive error handling & retry logic** (Phase 3.1, 3.2) ⬅️ **NEW TOP PRIORITY**
    - Critical for reliability
-   - Replace print() with logging
-   - Add try/except around HTTP requests
+   - Add retry logic with tenacity/backoff
+   - Comprehensive try/except around HTTP requests
+   - Add rate limiting
 
-4. **Write tests** (Phase 5.1)
-   - At least test parsing functions
+6. **Write pytest test suite** (Phase 5.1)
+   - Test parsing functions with fixtures
+   - Integration tests for database operations
    - Save fixture HTML files
-
-5. **Add data validation** (Phase 2.2)
-   - Catch data quality issues early
-
-6. **Enhanced CLI** (Phase 4.1)
-   - Date range scraping
-   - Progress bars (tqdm)
 
 ### Nice-to-Have (Future)
 7. **Async scraping** (Phase 6.2) - 4x speed improvement

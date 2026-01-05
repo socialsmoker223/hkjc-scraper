@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 HKJC Horse Racing Data Scraper - A Python web scraper that collects horse racing data from the Hong Kong Jockey Club (HKJC) website and stores it in PostgreSQL. Uses modern Python tooling with `uv` package manager.
 
-**Status**: Functional prototype (~60% complete). Core scraping and database infrastructure complete. Missing production hardening (error handling, logging, retries) and tests.
+**Status**: Functional prototype (~85% complete). Core scraping, database infrastructure, data validation, and CLI features complete. Missing production hardening (comprehensive error handling, retry logic, rate limiting) and pytest test suite.
 
 ## Development Commands
 
@@ -26,7 +26,12 @@ uv pip install -e ".[dev]"
 make db-up               # Start PostgreSQL container
 make db-down             # Stop PostgreSQL
 make db-reset            # Reset database (WARNING: deletes all data)
-make init-db             # Initialize/recreate tables
+make init-db             # Initialize tables (legacy, SQLAlchemy create_all)
+make migrate             # Run migrations (RECOMMENDED, Alembic)
+make migrate-create MSG="description"  # Create new migration
+make migrate-history     # Show migration history
+make migrate-current     # Show current revision
+make migrate-downgrade   # Downgrade one migration
 make db-shell            # Open psql shell
 make db-logs             # View database logs
 make pgadmin             # Start pgAdmin web UI (http://localhost:5050)
@@ -37,12 +42,19 @@ make pgadmin             # Start pgAdmin web UI (http://localhost:5050)
 # Scrape races for a specific date
 make scrape DATE=2025/12/23
 hkjc-scraper 2025/12/23                      # Using console script
+hkjc 2025/12/23                              # Using shorthand alias
 python -m hkjc_scraper 2025/12/23            # Using module
 
 # Additional options
 hkjc-scraper 2025/12/23 --dry-run            # Test without saving to DB
-hkjc-scraper 2025/12/23 --init-db            # Initialize DB before scraping
+hkjc-scraper --init-db                       # Initialize DB tables only
 hkjc-scraper 2025/12/23 --scrape-profiles    # Include horse profile scraping
+hkjc-scraper 2025/12/23 --force              # Force re-scrape existing data
+
+# Date range and bulk operations
+hkjc-scraper --date-range 2025/12/01 2025/12/31   # Scrape date range
+hkjc-scraper --backfill 2024/01/01 2024/12/31     # Backfill historical data
+hkjc-scraper --update                             # Update from last DB entry to today
 ```
 
 ### Code Quality
@@ -105,7 +117,7 @@ See `data_model.md` for detailed schema documentation (in Traditional Chinese).
 
 ### Data Flow
 
-1. **Scraping** (`hkjc_scraper.py`):
+1. **Scraping** (`scraper.py`):
    - `list_race_urls_for_meeting_all_courses()` - Discovers all races for a date from ResultsAll.aspx
    - `parse_localresults()` - Extracts race header + runner data from LocalResults.aspx
    - `parse_sectional_times()` - Extracts sectional data from DisplaySectionalTime.aspx
@@ -117,11 +129,13 @@ See `data_model.md` for detailed schema documentation (in Traditional Chinese).
    - Handles uniqueness constraints: meeting (date+venue), race (meeting+race_no), runner (race+horse)
    - Master entities (horse/jockey/trainer) use `code` as natural key
 
-3. **Orchestration** (`main.py`):
-   - Calls scraper functions
+3. **Orchestration** (`cli.py`):
+   - Parses command-line arguments and selects mode (single date, date range, backfill, update)
+   - Calls scraper functions for each date
    - Batches data by race
    - Calls persistence layer
    - Commits per race (not per meeting)
+   - Shows progress bars for multi-date operations
 
 ### Important Patterns
 
@@ -158,24 +172,81 @@ HKJC uses URLs with IDs like `JockeyId=MDLR&...` or `HorseId=HK_2023_J344`. The 
 - Venues: "ST" (沙田/Sha Tin) or "HV" (跑馬地/Happy Valley)
 - Track types: "草地" (turf) or "泥地" (dirt)
 
+## Data Validation
+
+The scraper validates all scraped data before saving to database:
+
+**Validation Rules (Critical Only):**
+- **Position**: 1-14 or special codes (PU, WD, RO, DNF, DQ, F, WV)
+- **Weights**: 95-165 lbs (actual and declared)
+- **Odds**: Must be positive Decimal
+- **Draw**: 1-14
+- **Distance**: 1000-2850 meters
+- **Horse age**: 2-14
+- **Required fields**: date, venue_code, race_no, horse_code
+- **Horse profile consistency**:
+  - wins + seconds + thirds <= starts
+  - season_prize <= lifetime_prize
+
+**Behavior (Semi-Strict Mode):**
+- Invalid records are **skipped** with detailed logging
+- Valid records continue to be saved normally
+- Validation summary shown in CLI output
+- Logs written to `hkjc_scraper.log`
+
+**Configuration:**
+```bash
+# .env file
+VALIDATION_STRICT=false          # Semi-strict mode (default)
+VALIDATION_LOG_INVALID=true      # Log invalid records (default)
+```
+
+**Testing:**
+```bash
+# Run manual validation tests
+uv run python tests/test_validators.py
+```
+
 ## Development Context
 
-**Current State:**
-- Phase 1 (Core Infrastructure): ✅ COMPLETED
-- Phase 2 (Horse Profile Scraping): ✅ COMPLETED (see HORSE_PROFILE_IMPLEMENTATION.md)
-- Phase 3 (Production Hardening): ❌ NOT STARTED
-  - No error handling/retry logic
-  - No logging system
-  - No rate limiting
-- Phase 5 (Testing & Quality): ❌ NOT STARTED
-  - 0 tests written
-  - pytest configured but unused
+**Current State (Overall: ~85% Complete):**
+- Phase 1 (Core Infrastructure): ✅ 100% COMPLETED
+  - ✅ Database, ORM, persistence, config, Docker all working
+  - ✅ Alembic migrations implemented (--migrate command)
+
+- Phase 2 (Complete Scraping): ✅ 100% COMPLETED
+  - ✅ Race results scraping (LocalResults.aspx)
+  - ✅ Sectional time scraping (DisplaySectionalTime.aspx)
+  - ✅ Horse profile scraping (Horse.aspx) - see HORSE_PROFILE_IMPLEMENTATION.md
+  - ✅ Data validation (semi-strict mode with logging)
+
+- Phase 3 (Production Hardening): ⏳ 40% IN PROGRESS
+  - ❌ No error handling/retry logic
+  - ✅ Logging system configured (hkjc_scraper.log)
+  - ❌ No rate limiting
+  - ✅ Incremental updates implemented (--date-range, --backfill, --update, --force)
+
+- Phase 4 (Usability & Automation): ✅ 85% COMPLETED
+  - ✅ Full-featured CLI with all modes
+  - ✅ Console scripts (hkjc-scraper, hkjc)
+  - ✅ Progress bars for multi-date operations
+  - ❌ Missing: Scheduling/automation (cron, APScheduler)
+
+- Phase 5 (Testing & Quality): ⏳ 35% IN PROGRESS
+  - ✅ Tooling configured: pytest, mypy, ruff, pre-commit
+  - ✅ Tests directory created with manual test script
+  - ✅ Validator tests (test_validators.py)
+  - ❌ No pytest unit/integration tests yet
 
 **Known Limitations:**
-- No validation on scraped data
-- No handling of HKJC website changes/errors
-- No concurrent scraping (sequential only)
-- Commit granularity is per-race (could be optimized)
+- No comprehensive error handling/retry logic for HKJC website changes/errors
+- No rate limiting between requests
+- No concurrent scraping (sequential only, could be optimized with async)
+- Commit granularity is per-race (could batch by meeting)
+- No pytest unit/integration tests for scraping functions (validator tests exist in test_validators.py)
+
+**Next Priority: Production Hardening (Phase 3)**
+Focus on error handling, retry logic, and rate limiting to make this production-ready.
 
 See `ROADMAP.md` for complete development plan and feature list.
 

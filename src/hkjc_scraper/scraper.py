@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime
 from decimal import Decimal
@@ -6,7 +7,10 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-BASE = "https://racing.hkjc.com/racing/information/Chinese"
+from hkjc_scraper.validators import validate_horse_profiles, validate_meeting, validate_race, validate_runners
+
+BASE = "https://racing.hkjc.com/zh-hk/local/information"
+logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------------
@@ -21,7 +25,7 @@ def list_race_urls_for_meeting_all_courses(date_ymd: str):
 
     回傳: list[{'url': full_localresults_url, 'racecourse': 'ST' or 'HV', 'race_no': int}]
     """
-    url = f"{BASE}/Racing/ResultsAll.aspx?RaceDate={date_ymd}"
+    url = f"{BASE}/resultsall?racedate={date_ymd}"
     resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -29,7 +33,7 @@ def list_race_urls_for_meeting_all_courses(date_ymd: str):
     out = []
     seen = set()
 
-    for a in soup.find_all("a", href=re.compile(r"LocalResults\.aspx\?")):
+    for a in soup.find_all("a", href=re.compile(r"localresults?")):
         href = a.get("href") or ""
         full = urljoin("https://racing.hkjc.com", href)
 
@@ -180,7 +184,7 @@ def parse_trainer_link(a_tag):
     return code, name_cn
 
 
-def scrape_race_page(local_url: str):
+def scrape_race_page(local_url: str, venue_code: str = None):
     """
     解析一場 LocalResults：
       meeting, race, horses, jockeys, trainers, runners
@@ -217,7 +221,7 @@ def scrape_race_page(local_url: str):
         "date_dmy": meeting_date_dmy,
         "date": meeting_date_ymd,
         "venue_name": meeting_venue,
-        "venue_code": None,  # 由 scrape_meeting 依 Racecourse 參數補
+        "venue_code": venue_code,  # 由呼叫者傳入 (ST/HV)
         "source_url": local_url,
         "season": season_start_year,
     }
@@ -228,6 +232,19 @@ def scrape_race_page(local_url: str):
     race = parse_race_header(info_table)
     race["localresults_url"] = local_url
     race["sectional_url"] = None  # 由 scrape_meeting 補
+
+    # VALIDATION: Validate meeting and race
+    try:
+        validate_meeting(meeting)
+    except Exception as e:
+        logger.error(f"Invalid meeting data: {e}")
+        raise
+
+    try:
+        validate_race(race)
+    except Exception as e:
+        logger.error(f"Invalid race data: {e}")
+        raise
 
     # Runners table
     result_header = soup.find("td", string=re.compile("名次"))
@@ -341,13 +358,30 @@ def scrape_race_page(local_url: str):
             }
         )
 
+    # VALIDATION: Validate runners before returning
+    runners_validation = validate_runners(runners)
+
+    if runners_validation.invalid_count > 0:
+        logger.warning(
+            f"Skipped {runners_validation.invalid_count}/{runners_validation.total_count} "
+            f"invalid runners in race {race.get('race_no')}"
+        )
+
+    # Use only valid runners
+    runners = runners_validation.valid_records
+
     return {
         "meeting": meeting,
         "race": race,
         "horses": list(horses.values()),
         "jockeys": list(jockeys.values()),
         "trainers": list(trainers.values()),
-        "runners": runners,
+        "runners": runners,  # Now validated
+        "validation_summary": {
+            "runners_total": runners_validation.total_count,
+            "runners_valid": runners_validation.valid_count,
+            "runners_invalid": runners_validation.invalid_count,
+        },
     }
 
 
@@ -365,7 +399,7 @@ def scrape_horse_profile(hkjc_horse_id: str):
     """
     from datetime import datetime
 
-    url = f"{BASE}/Horse/Horse.aspx?HorseId={hkjc_horse_id}&Option=1"
+    url = f"{BASE}/horse?horseid={hkjc_horse_id}"
     resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -530,7 +564,7 @@ def scrape_sectional_time(date_dmy: str, race_no: int):
       }
     只保留馬匹級分段。
     """
-    url = f"{BASE}/Racing/DisplaySectionalTime.aspx?RaceDate={date_dmy}&RaceNo={race_no}"
+    url = f"{BASE}/displaysectionaltime?racedate={date_dmy}&RaceNo={race_no}"
     resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -678,15 +712,12 @@ def scrape_meeting(date_ymd: str):
         local_url = item["url"]
         venue_code = item["racecourse"]  # ST / HV
         print(f"Scraping race page: {local_url}")
-        race_data = scrape_race_page(local_url)
-
-        # 補 meeting.venue_code
-        race_data["meeting"]["venue_code"] = venue_code
+        race_data = scrape_race_page(local_url, venue_code=venue_code)
 
         date_dmy = race_data["meeting"]["date_dmy"]
         race_no = race_data["race"]["race_no"]
 
-        sectional_url = f"{BASE}/Racing/DisplaySectionalTime.aspx?RaceDate={date_dmy}&RaceNo={race_no}"
+        sectional_url = f"{BASE}/displaysectionaltime?racedate={date_dmy}&RaceNo={race_no}"
         race_data["race"]["sectional_url"] = sectional_url
 
         print(f"  Scraping sectional: date={date_dmy}, race_no={race_no}")
@@ -708,7 +739,22 @@ def scrape_meeting(date_ymd: str):
                 except Exception as e:
                     print(f"      Warning: Failed to scrape profile for {hkjc_horse_id}: {e}")
 
-        race_data["horse_profiles"] = horse_profiles
+        # VALIDATION: Validate profiles before adding to race_data
+        if horse_profiles:
+            profiles_validation = validate_horse_profiles(horse_profiles)
+
+            if profiles_validation.invalid_count > 0:
+                logger.warning(
+                    f"Skipped {profiles_validation.invalid_count}/{profiles_validation.total_count} "
+                    "invalid horse profiles"
+                )
+
+            race_data["horse_profiles"] = profiles_validation.valid_records
+            race_data["validation_summary"]["profiles_total"] = profiles_validation.total_count
+            race_data["validation_summary"]["profiles_valid"] = profiles_validation.valid_count
+            race_data["validation_summary"]["profiles_invalid"] = profiles_validation.invalid_count
+        else:
+            race_data["horse_profiles"] = []
 
         all_races.append(race_data)
 

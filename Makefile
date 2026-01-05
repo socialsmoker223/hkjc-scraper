@@ -1,4 +1,4 @@
-.PHONY: help install dev precommit db-up db-down db-reset scrape test lint format clean
+.PHONY: help install dev precommit db-up db-down db-reset scrape test lint format clean migrate migrate-create migrate-history migrate-current migrate-downgrade
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -56,8 +56,27 @@ dry-run: ## Dry run scrape (usage: make dry-run DATE=2025/12/23)
 	fi
 	uv run hkjc-scraper $(DATE) --dry-run
 
-init-db: ## Initialize database tables
+init-db: ## Initialize database tables (legacy, use 'make migrate' for production)
 	uv run python -m hkjc_scraper.database
+
+migrate: ## Run database migrations (Alembic)
+	uv run hkjc-scraper --migrate
+
+migrate-create: ## Create new migration (usage: make migrate-create MSG="description")
+	@if [ -z "$(MSG)" ]; then \
+		echo "Error: MSG is required. Usage: make migrate-create MSG='add new column'"; \
+		exit 1; \
+	fi
+	uv run python -m alembic revision --autogenerate -m "$(MSG)"
+
+migrate-history: ## Show migration history
+	uv run python -m alembic history
+
+migrate-current: ## Show current migration revision
+	uv run python -m alembic current
+
+migrate-downgrade: ## Downgrade one migration
+	uv run python -m alembic downgrade -1
 
 test: ## Run tests
 	uv run pytest
