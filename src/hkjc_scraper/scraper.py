@@ -4,7 +4,6 @@ from datetime import datetime
 from decimal import Decimal
 from urllib.parse import parse_qs, urljoin, urlparse
 
-import requests
 from bs4 import BeautifulSoup
 
 from hkjc_scraper.config import config
@@ -120,7 +119,7 @@ def parse_race_header(info_table: BeautifulSoup):
             race_class = cell_text.split(" - ")[0].strip() if cell_text else None
     except (IndexError, AttributeError) as e:
         logger.error(f"Failed to parse race header: {e}")
-        raise ParseError(f"Race header parsing failed: {e}")
+        raise ParseError(f"Race header parsing failed: {e}") from e
 
     header_text = " ".join(r.get_text(" ", strip=True) for r in rows[1:5])
 

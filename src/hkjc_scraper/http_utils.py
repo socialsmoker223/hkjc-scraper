@@ -6,11 +6,10 @@ import logging
 import time
 from functools import wraps
 from threading import Lock
-from typing import Any, Callable
+from typing import Callable
 
 import requests
 from tenacity import (
-    RetryError,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -95,10 +94,10 @@ def retry_on_network_error(func: Callable) -> Callable:
     Retries on:
         - requests.ConnectionError (connection failed)
         - requests.Timeout (request timeout)
-        - requests.RequestException (generic request error)
 
     Does NOT retry on:
-        - HTTPError (4xx/5xx responses) - these are handled separately
+        - requests.HTTPError (4xx/5xx responses)
+        - Other request exceptions (invalid URLs, etc.)
 
     Configuration:
         - Max attempts: config.RETRY_MAX_ATTEMPTS (default: 3)
@@ -107,7 +106,7 @@ def retry_on_network_error(func: Callable) -> Callable:
     """
 
     @retry(
-        retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, requests.RequestException)),
+        retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout)),
         stop=stop_after_attempt(config.RETRY_MAX_ATTEMPTS),
         wait=wait_exponential(multiplier=1, min=1, max=30, exp_base=config.RETRY_BACKOFF_BASE),
         reraise=True,
@@ -116,11 +115,7 @@ def retry_on_network_error(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except requests.HTTPError:
-            # Don't retry HTTP errors (4xx/5xx)
-            # These indicate server-side issues or invalid requests
-            raise
-        except (requests.ConnectionError, requests.Timeout, requests.RequestException) as e:
+        except (requests.ConnectionError, requests.Timeout) as e:
             logger.warning(f"Network error in {func.__name__}: {e}, retrying...")
             raise
 
