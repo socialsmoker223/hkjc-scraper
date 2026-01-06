@@ -8,10 +8,10 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    BIGINT,
     DATE,
     DECIMAL,
     INT,
+    Integer,
     TEXT,
     VARCHAR,
     ForeignKey,
@@ -36,7 +36,7 @@ class Base(DeclarativeBase):
 class Meeting(Base):
     __tablename__ = "meeting"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date: Mapped[date] = mapped_column(DATE, nullable=False)
     venue_code: Mapped[str] = mapped_column(VARCHAR(4), nullable=False)  # ST/HV
     venue_name: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
@@ -58,8 +58,8 @@ class Meeting(Base):
 class Race(Base):
     __tablename__ = "race"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
-    meeting_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("meeting.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meeting_id: Mapped[int] = mapped_column(Integer, ForeignKey("meeting.id", ondelete="CASCADE"), nullable=False)
     race_no: Mapped[int] = mapped_column(INT, nullable=False)
     race_code: Mapped[Optional[int]] = mapped_column(INT)  # Changed from VARCHAR(16)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
@@ -97,7 +97,7 @@ class Race(Base):
 class Horse(Base):
     __tablename__ = "horse"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(VARCHAR(16), unique=True, nullable=False)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
@@ -128,9 +128,9 @@ class Horse(Base):
 class HorseProfile(Base):
     __tablename__ = "horse_profile"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     horse_id: Mapped[int] = mapped_column(
-        BIGINT, ForeignKey("horse.id", ondelete="CASCADE"), unique=True, nullable=False
+        Integer, ForeignKey("horse.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     origin: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     age: Mapped[Optional[int]] = mapped_column(INT)
@@ -164,8 +164,8 @@ class HorseProfile(Base):
 class HorseProfileHistory(Base):
     __tablename__ = "horse_profile_history"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
-    horse_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    horse_id: Mapped[int] = mapped_column(Integer, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     origin: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     age: Mapped[Optional[int]] = mapped_column(INT)
@@ -209,7 +209,7 @@ class HorseProfileHistory(Base):
 class Jockey(Base):
     __tablename__ = "jockey"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(VARCHAR(16), unique=True, nullable=False)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
@@ -226,7 +226,7 @@ class Jockey(Base):
 class Trainer(Base):
     __tablename__ = "trainer"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(VARCHAR(16), unique=True, nullable=False)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
@@ -248,11 +248,11 @@ class Trainer(Base):
 class Runner(Base):
     __tablename__ = "runner"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
-    race_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("race.id", ondelete="CASCADE"), nullable=False)
-    horse_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
-    jockey_id: Mapped[Optional[int]] = mapped_column(BIGINT, ForeignKey("jockey.id", ondelete="SET NULL"))
-    trainer_id: Mapped[Optional[int]] = mapped_column(BIGINT, ForeignKey("trainer.id", ondelete="SET NULL"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    race_id: Mapped[int] = mapped_column(Integer, ForeignKey("race.id", ondelete="CASCADE"), nullable=False)
+    horse_id: Mapped[int] = mapped_column(Integer, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
+    jockey_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("jockey.id", ondelete="SET NULL"))
+    trainer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("trainer.id", ondelete="SET NULL"))
     finish_position_raw: Mapped[Optional[str]] = mapped_column(VARCHAR(8))
     finish_position_num: Mapped[Optional[int]] = mapped_column(INT)
     horse_no: Mapped[Optional[int]] = mapped_column(INT)
@@ -288,10 +288,10 @@ class Runner(Base):
 class HorseSectional(Base):
     __tablename__ = "horse_sectional"
 
-    id: Mapped[int] = mapped_column(BIGINT, primary_key=True, autoincrement=True)
-    race_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("race.id", ondelete="CASCADE"), nullable=False)
-    runner_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("runner.id", ondelete="CASCADE"), nullable=False)
-    horse_id: Mapped[int] = mapped_column(BIGINT, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    race_id: Mapped[int] = mapped_column(Integer, ForeignKey("race.id", ondelete="CASCADE"), nullable=False)
+    runner_id: Mapped[int] = mapped_column(Integer, ForeignKey("runner.id", ondelete="CASCADE"), nullable=False)
+    horse_id: Mapped[int] = mapped_column(Integer, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
     section_no: Mapped[int] = mapped_column(INT, nullable=False)
     position: Mapped[Optional[int]] = mapped_column(INT)
     margin_raw: Mapped[Optional[str]] = mapped_column(VARCHAR(16))

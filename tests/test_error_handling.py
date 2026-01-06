@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from bs4 import BeautifulSoup
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 
 from hkjc_scraper.exceptions import ParseError
 from hkjc_scraper.persistence import save_race_data
@@ -69,20 +69,21 @@ class TestDatabaseErrorHandling:
         assert result["profile_count"] == 0
 
     def test_save_race_data_with_duplicate(self, test_db_session, sample_race_data):
-        """Test IntegrityError handling for duplicate data"""
+        """Test UPSERT behavior for duplicate data"""
         # First save should succeed
         result1 = save_race_data(test_db_session, sample_race_data)
         assert result1["race_id"] is not None
+        race_id_1 = result1["race_id"]
 
         # Commit the transaction
         test_db_session.commit()
 
-        # Second save should handle IntegrityError gracefully
+        # Second save should update existing record (UPSERT behavior)
         result2 = save_race_data(test_db_session, sample_race_data)
 
-        # Should return None for race_id indicating duplicate was handled
-        assert result2["race_id"] is None
-        assert result2["runner_count"] == 0
+        # Should return same race_id (update, not insert)
+        assert result2["race_id"] == race_id_1
+        assert result2["runner_count"] == 1  # Still has 1 runner
 
     def test_save_race_data_with_db_error(self, test_db_session, sample_race_data):
         """Test SQLAlchemyError handling"""
@@ -138,11 +139,11 @@ class TestNoneValueHandling:
             "race": {
                 "race_no": 1,
                 "race_code": 284,
-                "race_class": "第五班",
-                "distance": 1200,
-                "track": "草地",
+                "class_text": "第五班",
+                "distance_m": 1200,
+                "track_type": "草地",
                 "going": "好地",
-                "prize": 750000,
+                "prize_total": 750000,
             },
             "horses": [],
             "jockeys": [],

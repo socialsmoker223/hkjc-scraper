@@ -28,15 +28,21 @@ def test_db_session():
 def sample_race_data():
     """Sample race data for testing"""
     return {
-        "meeting": {"date": "2025/12/23", "date_dmy": "23/12/2025", "venue_code": "ST", "venue_name": "沙田", "season": 2025},
+        "meeting": {
+            "date": "2025/12/23",
+            "date_dmy": "23/12/2025",
+            "venue_code": "ST",
+            "venue_name": "沙田",
+            "season": 2025,
+        },
         "race": {
             "race_no": 1,
             "race_code": 284,
-            "race_class": "第五班",
-            "distance": 1200,
-            "track": "草地",
+            "class_text": "第五班",
+            "distance_m": 1200,
+            "track_type": "草地",
             "going": "好地",
-            "prize": 750000,
+            "prize_total": 750000,
         },
         "horses": [
             {
