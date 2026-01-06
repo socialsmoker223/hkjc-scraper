@@ -14,17 +14,37 @@ load_dotenv()
 class Config:
     """Application configuration"""
 
-    # Database settings
+    # Database type selection
+    DATABASE_TYPE = os.getenv("DATABASE_TYPE", "local")  # "local" or "supabase"
+
+    # Local PostgreSQL settings
     DB_HOST = os.getenv("DB_HOST", "localhost")
     DB_PORT = int(os.getenv("DB_PORT", "5432"))
     DB_NAME = os.getenv("DB_NAME", "hkjc_racing")
     DB_USER = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
+    # Supabase settings
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+
     @classmethod
     def get_db_url(cls) -> str:
-        """建構 SQLAlchemy 資料庫連線 URL"""
-        return f"postgresql://{cls.DB_USER}:{cls.DB_PASSWORD}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
+        """
+        Build SQLAlchemy database connection URL based on DATABASE_TYPE
+        建構 SQLAlchemy 資料庫連線 URL（根據 DATABASE_TYPE）
+        """
+        if cls.DATABASE_TYPE == "supabase":
+            if not cls.SUPABASE_URL:
+                raise ValueError("SUPABASE_URL must be set when DATABASE_TYPE=supabase")
+            return cls.SUPABASE_URL
+        else:
+            # Local PostgreSQL (default)
+            return f"postgresql://{cls.DB_USER}:{cls.DB_PASSWORD}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
+
+    @classmethod
+    def get_db_type_display(cls) -> str:
+        """Get human-readable database type for logging"""
+        return "Supabase (Cloud PostgreSQL)" if cls.DATABASE_TYPE == "supabase" else "Local PostgreSQL"
 
     # Scraping settings
     HKJC_BASE_URL = os.getenv("HKJC_BASE_URL", "https://racing.hkjc.com/racing/information/Chinese")

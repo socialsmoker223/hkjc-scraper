@@ -1,3 +1,7 @@
+# HKJC 資料模型 (Database Schema)
+
+> **Database Compatibility:** This schema is compatible with both Local PostgreSQL and Supabase (cloud PostgreSQL). The schema design is database-agnostic and uses standard PostgreSQL features.
+
 整個專案目前有 9 張核心表：Meeting、Race、Horse、HorseProfile（現況）、HorseProfileHistory（歷史）、Jockey、Trainer、Runner、HorseSectional。這些表對應 HKJC 的賽事頁、分段時間頁、馬匹資料頁，涵蓋你目前要用的全部資料。[1][2]
 
 ***

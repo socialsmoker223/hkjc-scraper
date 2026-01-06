@@ -41,10 +41,22 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
   - Alembic configuration and migration scripts in alembic/
   - Makefile targets for all migration operations
   - Version control for database schema changes
+- ✅ **Error handling and resilience - FULLY IMPLEMENTED** (2026-01-06)
+  - Comprehensive error handling with retry logic
+  - Network error recovery with exponential backoff
+  - Parse failure handling and graceful degradation
+  - Database transaction rollback on errors
+  - Request timeouts and connection pooling
+  - Rate limiting for politeness
+- ✅ **Test suite fixes - FULLY IMPLEMENTED** (2026-01-06)
+  - All validator tests now passing (100% pass rate)
+  - Fixed 4 test failures in test_validators.py
+  - Comprehensive validation test coverage
 
 **❌ What's Missing:**
-- **Phase 3**: Production hardening (error handling, retry logic, rate limiting)
-- **Phase 5**: Testing infrastructure (unit/integration tests with pytest)
+- **Phase 3**: Enhanced logging (structured logging, log rotation, summary reports)
+- **Phase 3**: Supabase integration (cloud database option)
+- **Phase 5**: Pytest test suite (unit/integration tests for scraping functions)
 - **Phase 4**: Scheduling/automation (cron, APScheduler, systemd)
 
 ---
@@ -127,37 +139,38 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 ---
 
 ## Phase 3: Production Hardening (Reliability)
-*Priority: High | Status: 40% Complete - Critical for production use*
+*Priority: High | Status: 65% Complete ⬆️ - Error handling complete, logging needs enhancement*
 
-**Current issues:**
-- ❌ No comprehensive error handling beyond basic `try/except`
+**Current state:**
+- ✅ Comprehensive error handling with retry logic
+- ✅ Network error recovery with exponential backoff
+- ✅ Parse failure handling and graceful degradation
+- ✅ Database transaction rollback on errors
+- ✅ Request timeouts and connection pooling
+- ✅ Rate limiting for politeness
 - ⚠️ Basic logging configured (hkjc_scraper.log) but needs enhancement
-- ❌ No retry logic (network failures = immediate crash)
-- ❌ No rate limiting (could trigger HKJC rate limits)
-- ❌ HTTP errors bubble up with stack traces in some areas
 - ❌ No cloud database option (Supabase integration not implemented)
 
-### 3.1 Error Handling & Resilience
-- [ ] **Wrap all HTTP requests with retry logic** (in hkjc_scraper.py)
-  - Use `tenacity` or `backoff` library
+### 3.1 Error Handling & Resilience ✅ **COMPLETED (2026-01-06)**
+- [x] **Wrap all HTTP requests with retry logic** (in hkjc_scraper.py) ✅
+  - Uses `tenacity` library with exponential backoff
   - Exponential backoff: 1s, 2s, 4s, 8s, max 3 retries
-  - Only retry on network errors (not 404/500)
-- [ ] **Comprehensive exception handling** (in hkjc_scraper.py)
+  - Only retries on network errors (not 404/500)
+- [x] **Comprehensive exception handling** (in hkjc_scraper.py) ✅
   - Network errors: `requests.exceptions.RequestException`
   - Parse failures: catch `AttributeError`, `IndexError` from BeautifulSoup
   - DB errors: catch `SQLAlchemyError`, rollback transaction
   - File-specific error handling in each scraping function
-- [ ] **Add request timeouts** (in hkjc_scraper.py)
-  - Current: 15s timeout (hardcoded in hkjc_scraper.py)
-  - Make configurable via config.py
-  - Add connection timeout separate from read timeout
-- [ ] **Connection pooling** (in hkjc_scraper.py)
-  - Use `requests.Session()` instead of `requests.get()`
-  - Reuse connections across requests in same meeting
-- [ ] **Rate limiting (politeness)** (in hkjc_scraper.py)
-  - Add 1-2 second delay between race scrapes
-  - Add 0.5 second delay between sectional/profile requests
-  - Make configurable via config.py
+- [x] **Add request timeouts** (in hkjc_scraper.py) ✅
+  - Configurable via config.py
+  - Connection timeout separate from read timeout
+- [x] **Connection pooling** (in hkjc_scraper.py) ✅
+  - Uses `requests.Session()` instead of `requests.get()`
+  - Reuses connections across requests in same meeting
+- [x] **Rate limiting (politeness)** (in hkjc_scraper.py) ✅
+  - Configurable delays between race scrapes
+  - Configurable delays between sectional/profile requests
+  - Configured via config.py
 
 ### 3.2 Logging & Monitoring
 **Current state:** Basic logging configured (writes to hkjc_scraper.log) but needs enhancement
@@ -280,22 +293,24 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 ---
 
 ## Phase 5: Quality & Testing (Maturity)
-*Priority: Medium | Status: 30% Complete (tooling configured, no tests written)*
+*Priority: Medium | Status: 50% Complete ⬆️ (tooling configured, validator tests passing)*
 
 **Current state:**
 - ✅ `pytest` in dev dependencies (pyproject.toml)
 - ✅ `ruff` in dev dependencies
 - ✅ `mypy` in dev dependencies
 - ✅ Makefile has `test`, `lint`, `format` targets
-- ✅ `tests/` directory created (but no test files yet)
+- ✅ `tests/` directory created with test_validators.py
 - ✅ Ruff configured in pyproject.toml (line-length, linting rules)
 - ✅ Mypy configured in pyproject.toml (type checking settings)
 - ✅ Pre-commit hooks configured (.pre-commit-config.yaml)
-- ❌ **Zero test files exist** (tests/ directory is empty except __init__.py)
+- ✅ **Validator tests complete** - 100% pass rate (test_validators.py) ⬆️
+- ❌ **No pytest tests for scraping functions** (need unit/integration tests)
 
-### 5.1 Testing Infrastructure ⚠️ **CRITICAL - ZERO TESTS**
+### 5.1 Testing Infrastructure ⏳ **IN PROGRESS - Validator tests complete, scraping tests needed**
 - [x] **Set up test infrastructure**
   - [x] Create `tests/` directory
+  - [x] Create `tests/test_validators.py` - 100% pass rate ✅ **COMPLETED (2026-01-06)**
   - [ ] Create `tests/conftest.py` with pytest fixtures
   - [ ] Create `tests/test_parsing.py` for scraping functions
   - [ ] Create `tests/test_persistence.py` for database operations
@@ -418,9 +433,9 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 
 ## Progress Tracking
 
-**Current Phase:** Phase 3 - Production Hardening (making it production-ready)
-**Overall Completion:** 85% (+5% from validation and migrations)
-**Last Updated:** 2026-01-05 (updated after validation and Alembic implementation)
+**Current Phase:** Phase 3 - Production Hardening (error handling complete, logging enhancement needed)
+**Overall Completion:** 88% ⬆️ (+3% from error handling and test fixes)
+**Last Updated:** 2026-01-06 (updated after error handling implementation and test fixes)
 **Total Python Code:** ~2,100 lines across 8 files (+validators.py, +test_validators.py)
 
 ### Completion by Phase
@@ -434,12 +449,11 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
   - ✅ Horse profile scraping: 100% (fully implemented 2025-12-24)
   - ✅ Data validation: **100%** ⬆️ (implemented with validators.py 2025-12-26)
 
-- ⏳ **Phase 3: Production Hardening** - **40%** ⬆️ (LOGGING + INCREMENTAL UPDATES DONE)
-  - ❌ No comprehensive error handling
-  - ⚠️ Basic logging: 50% (hkjc_scraper.log configured, needs enhancement)
-  - ❌ No retry logic
-  - ❌ No rate limiting
+- ⏳ **Phase 3: Production Hardening** - **65%** ⬆️ (ERROR HANDLING COMPLETE, LOGGING NEEDS ENHANCEMENT)
+  - ✅ Error handling & resilience: 100% ⬆️ (retry logic, timeouts, connection pooling, rate limiting)
+  - ⚠️ Logging & monitoring: 50% (hkjc_scraper.log configured, needs structured logging enhancement)
   - ✅ Incremental updates: 100% (smart scraping, backfill, update, range)
+  - ❌ Supabase integration: 0%
 
 - ⏳ **Phase 4: Usability & Automation** - **85%** (CLI FEATURES COMPLETE, SCHEDULING PENDING)
   - ✅ Basic CLI: 100% (argparse, dry-run, init-db)
@@ -447,12 +461,13 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
   - ✅ Enhanced CLI: 100% (date-range, backfill, update mode, force flag, progress bars)
   - ❌ Scheduling: 0% (cron jobs, APScheduler, systemd services)
 
-- ⏳ **Phase 5: Quality & Testing** - **35%** ⬆️ (TOOLING CONFIGURED, VALIDATOR TESTS DONE)
+- ⏳ **Phase 5: Quality & Testing** - **50%** ⬆️ (TOOLING CONFIGURED, VALIDATOR TESTS PASSING)
   - ✅ Dependencies installed: pytest, mypy, ruff, pre-commit
   - ✅ Makefile targets: test, lint, format, typecheck
   - ✅ Configuration: ruff, mypy, pre-commit hooks all configured
   - ✅ Tests directory created (tests/__init__.py)
-  - ⚠️ Tests: 10% (validator tests in test_validators.py, no pytest suite yet)
+  - ✅ Validator tests: 100% pass rate ⬆️ (test_validators.py - all tests passing)
+  - ❌ Scraping function tests: 0% (no pytest suite for scraping/persistence yet)
 
 - ⏳ **Phase 6: Advanced Features** - **15%** (DOCKER ONLY)
   - ✅ Docker Compose: 100% (PostgreSQL + pgAdmin)
@@ -473,21 +488,26 @@ Your HKJC horse racing data scraper is a **functional prototype (≈85% complete
 
 4. ~~**Database migrations with Alembic** (Phase 1.1)~~ ✅ **COMPLETED 2025-12-26**
 
-5. **Add comprehensive error handling & retry logic** (Phase 3.1, 3.2) ⬅️ **NEW TOP PRIORITY**
-   - Critical for reliability
-   - Add retry logic with tenacity/backoff
-   - Comprehensive try/except around HTTP requests
-   - Add rate limiting
+5. ~~**Add comprehensive error handling & retry logic** (Phase 3.1)~~ ✅ **COMPLETED 2026-01-06**
 
-6. **Write pytest test suite** (Phase 5.1)
+6. ~~**Fix test failures** (Phase 5.1)~~ ✅ **COMPLETED 2026-01-06**
+
+7. **Enhance logging system** (Phase 3.2) ⬅️ **NEW TOP PRIORITY**
+   - Replace print() with structured logging
+   - Log rotation and levels (INFO/WARNING/ERROR/DEBUG)
+   - Summary reports at end of scraping
+   - Multi-destination logging (console + file)
+
+8. **Write pytest test suite for scraping** (Phase 5.1)
    - Test parsing functions with fixtures
    - Integration tests for database operations
    - Save fixture HTML files
+   - Unit tests for all scraping functions
 
 ### Nice-to-Have (Future)
-7. **Async scraping** (Phase 6.2) - 4x speed improvement
-8. **Export functionality** (Phase 6.1) - CSV/JSON exports
-9. **Analytics dashboards** (Phase 6.1) - Streamlit/Jupyter
+9. **Async scraping** (Phase 6.2) - 4x speed improvement
+10. **Export functionality** (Phase 6.1) - CSV/JSON exports
+11. **Analytics dashboards** (Phase 6.1) - Streamlit/Jupyter
 
 ---
 

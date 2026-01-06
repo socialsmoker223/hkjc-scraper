@@ -88,7 +88,23 @@ def validate_position(position_raw: Optional[str]) -> Optional[str]:
             pass  # Fall through to error
 
     # Special codes
-    valid_codes = ["PU", "WD", "RO", "DNF", "DQ", "F", "WV"]
+    valid_codes = [
+        "DISQ",  # 取消資格
+        "DNF",  # 未有跑畢全程
+        "FE",  # 馬匹在賽事中跌倒
+        "ML",  # 多個馬位
+        "PU",  # 拉停
+        "TNP",  # 并無參賽競逐
+        "TO",  # 遙遙落後
+        "UR",  # 騎師墮馬
+        "VOID",  # 賽事無效
+        "WR",  # 司閘員著令退出
+        "WV",  # 因健康理由宣佈退出
+        "WV-A",  # 因健康理由於騎師過磅后宣佈退出
+        "WX",  # 競賽董事小組著令退出
+        "WX-A",  # 於騎師過磅後被競賽董事小組著令退出
+        "WXNR",  # 競賽董事小組著令退出，視作無出賽馬匹
+    ]
     if position_raw not in valid_codes:
         raise ValidationError(
             f"Invalid position code: {position_raw}, expected numeric (1-14), "

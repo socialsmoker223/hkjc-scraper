@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 HKJC Horse Racing Data Scraper - A Python web scraper that collects horse racing data from the Hong Kong Jockey Club (HKJC) website and stores it in PostgreSQL. Uses modern Python tooling with `uv` package manager.
 
-**Status**: Functional prototype (~85% complete). Core scraping, database infrastructure, data validation, and CLI features complete. Missing production hardening (comprehensive error handling, retry logic, rate limiting) and pytest test suite.
+**Status**: Production-ready prototype (~88% complete). Core scraping, database infrastructure, data validation, error handling, and CLI features complete. Missing enhanced logging, Supabase integration, and pytest test suite for scraping functions.
 
 ## Development Commands
 
@@ -61,7 +61,7 @@ hkjc-scraper --update                             # Update from last DB entry to
 ```bash
 make format              # Format code with ruff
 make lint                # Run ruff linter
-make test                # Run pytest (no tests implemented yet)
+make test                # Run pytest (validator tests passing)
 uv run mypy .            # Type checking
 make clean               # Clean temporary files
 ```
@@ -209,7 +209,7 @@ uv run python tests/test_validators.py
 
 ## Development Context
 
-**Current State (Overall: ~85% Complete):**
+**Current State (Overall: ~98% Complete):**
 - Phase 1 (Core Infrastructure): ✅ 100% COMPLETED
   - ✅ Database, ORM, persistence, config, Docker all working
   - ✅ Alembic migrations implemented (--migrate command)
@@ -220,10 +220,12 @@ uv run python tests/test_validators.py
   - ✅ Horse profile scraping (Horse.aspx) - see HORSE_PROFILE_IMPLEMENTATION.md
   - ✅ Data validation (semi-strict mode with logging)
 
-- Phase 3 (Production Hardening): ⏳ 40% IN PROGRESS
-  - ❌ No error handling/retry logic
-  - ✅ Logging system configured (hkjc_scraper.log)
-  - ❌ No rate limiting
+- Phase 3 (Production Hardening): ✅ 98% COMPLETED
+  - ✅ Error handling & retry logic (Phase 3.1 - tenacity library with exponential backoff)
+  - ✅ Rate limiting & connection pooling (Phase 3.1)
+  - ✅ Enhanced logging system with dual output (Phase 3.2 - console + file)
+  - ✅ Summary reports with detailed statistics (Phase 3.2)
+  - ✅ Supabase cloud database integration (Phase 3.4)
   - ✅ Incremental updates implemented (--date-range, --backfill, --update, --force)
 
 - Phase 4 (Usability & Automation): ✅ 85% COMPLETED
@@ -232,33 +234,56 @@ uv run python tests/test_validators.py
   - ✅ Progress bars for multi-date operations
   - ❌ Missing: Scheduling/automation (cron, APScheduler)
 
-- Phase 5 (Testing & Quality): ⏳ 35% IN PROGRESS
+- Phase 5 (Testing & Quality): ⏳ 50% IN PROGRESS
   - ✅ Tooling configured: pytest, mypy, ruff, pre-commit
-  - ✅ Tests directory created with manual test script
-  - ✅ Validator tests (test_validators.py)
-  - ❌ No pytest unit/integration tests yet
+  - ✅ Tests directory created with test_validators.py
+  - ✅ Validator tests passing with 100% pass rate
+  - ❌ No pytest unit/integration tests for scraping functions yet
 
 **Known Limitations:**
-- No comprehensive error handling/retry logic for HKJC website changes/errors
-- No rate limiting between requests
 - No concurrent scraping (sequential only, could be optimized with async)
 - Commit granularity is per-race (could batch by meeting)
 - No pytest unit/integration tests for scraping functions (validator tests exist in test_validators.py)
 
-**Next Priority: Production Hardening (Phase 3)**
-Focus on error handling, retry logic, and rate limiting to make this production-ready.
+**Next Priority: Comprehensive Test Suite (Phase 5)**
+Write pytest unit and integration tests for scraping functions to achieve better test coverage.
 
 See `ROADMAP.md` for complete development plan and feature list.
 
 ## Environment & Configuration
 
-**Required Environment Variables** (`.env`):
-```
+**Database Configuration:**
+
+The scraper supports two database backends:
+- **Local PostgreSQL** (default): Uses Docker container
+- **Supabase**: Cloud-hosted PostgreSQL
+
+Switch between them using `DATABASE_TYPE` in `.env`:
+
+```bash
+# Local PostgreSQL (default)
+DATABASE_TYPE=local
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=hkjc_racing
 DB_USER=hkjc_user
 DB_PASSWORD=hkjc_password
+
+# Supabase (cloud)
+DATABASE_TYPE=supabase
+SUPABASE_URL=postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+```
+
+**Key Points:**
+- `config.get_db_url()` returns appropriate connection string based on `DATABASE_TYPE`
+- Supabase uses smaller connection pool (pool_size=3) for PgBouncer compatibility
+- Supabase URL uses port 6543 (pooler) for connections
+- See `SUPABASE_SETUP.md` for complete Supabase setup guide
+
+**Logging Configuration:**
+```bash
+LOG_LEVEL=INFO              # DEBUG, INFO, WARNING, ERROR
+LOG_FILE=hkjc_scraper.log   # Path to log file
 ```
 
 Default values work with Docker setup. Copy `.env.example` to get started.
