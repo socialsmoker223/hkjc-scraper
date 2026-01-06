@@ -11,11 +11,11 @@ from sqlalchemy import (
     DATE,
     DECIMAL,
     INT,
-    Integer,
     TEXT,
     VARCHAR,
     ForeignKey,
     Index,
+    Integer,
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship

@@ -3,6 +3,7 @@ Database connection and session management
 資料庫連線與 session 管理
 """
 
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -13,15 +14,31 @@ from sqlalchemy.pool import QueuePool
 from hkjc_scraper.config import config
 from hkjc_scraper.models import Base
 
+logger = logging.getLogger(__name__)
+
+# Supabase-specific connection pool settings
+if config.DATABASE_TYPE == "supabase":
+    pool_config = {
+        "poolclass": QueuePool,
+        "pool_size": 3,  # Smaller for Supabase PgBouncer
+        "max_overflow": 7,  # Total 10 connections max
+        "pool_pre_ping": True,
+        "pool_recycle": 300,  # Recycle connections every 5 minutes
+        "connect_args": {"connect_timeout": 10, "application_name": "hkjc_scraper"},
+        "echo": False,
+    }
+else:
+    # Local PostgreSQL settings
+    pool_config = {
+        "poolclass": QueuePool,
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_pre_ping": True,
+        "echo": False,
+    }
+
 # Create engine with connection pooling
-engine = create_engine(
-    config.get_db_url(),
-    poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # Verify connections before using
-    echo=False,  # Set to True for SQL debugging
-)
+engine = create_engine(config.get_db_url(), **pool_config)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -33,7 +50,7 @@ def init_db():
     Initialize database and create all tables
     """
     Base.metadata.create_all(bind=engine)
-    print("Database tables created successfully")
+    logger.info("Database tables created successfully")
 
 
 def drop_db():
@@ -42,7 +59,7 @@ def drop_db():
     Drop all tables (dangerous, development only)
     """
     Base.metadata.drop_all(bind=engine)
-    print("Database tables dropped")
+    logger.warning("Database tables dropped")
 
 
 def migrate_db(command: str = "upgrade", revision: str = "head"):
@@ -77,10 +94,10 @@ def migrate_db(command: str = "upgrade", revision: str = "head"):
     # Execute command
     if command == "upgrade":
         alembic_command.upgrade(alembic_cfg, revision)
-        print(f"Database migrated to revision: {revision}")
+        logger.info(f"Database migrated to revision: {revision}")
     elif command == "downgrade":
         alembic_command.downgrade(alembic_cfg, revision)
-        print(f"Database downgraded to revision: {revision}")
+        logger.info(f"Database downgraded to revision: {revision}")
     elif command == "current":
         alembic_command.current(alembic_cfg)
     elif command == "history":
@@ -122,10 +139,13 @@ def check_connection() -> bool:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print("Database connection successful")
+        db_type = config.get_db_type_display()
+        logger.info(f"Database connection successful ({db_type})")
+        print(f"Database connection successful ({db_type})")  # Also print for user visibility
         return True
     except Exception as e:
-        print(f"Database connection failed: {e}")
+        logger.error(f"Database connection failed: {e}")
+        print(f"Database connection failed: {e}")  # Also print for user visibility
         return False
 
 

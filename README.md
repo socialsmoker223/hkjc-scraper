@@ -7,9 +7,12 @@ A Python web scraper that collects horse racing data from the Hong Kong Jockey C
 - Scrapes race results, runner performance, and sectional times
 - Stores data in normalized PostgreSQL database with 9 tables
 - Automatic UPSERT operations to handle duplicate data
-- Command-line interface for easy operation
+- **Database options: Local PostgreSQL (Docker) or Supabase (Cloud)**
+- Command-line interface with comprehensive summary reports
+- **Enhanced logging system with dual output (console + file)**
 - Tracks historical horse profile changes
-- PostgreSQL runs in Docker for easy setup
+- Data validation with configurable strictness
+- Error handling with automatic retry logic
 - Modern Python tooling with `uv` package manager
 
 ## Project Structure
@@ -142,6 +145,67 @@ make scrape DATE=2025/12/23
 python -m hkjc_scraper 2025/12/23
 ```
 
+## Database Options
+
+The scraper supports two database backends:
+
+### Option 1: Local PostgreSQL (Docker) - Default
+
+Best for local development and full control:
+
+```bash
+# Start PostgreSQL with Docker
+make db-up
+
+# Run migrations
+make migrate
+
+# Scrape data
+hkjc-scraper 2025/12/23
+```
+
+**Pros:** Fast, no internet required, full control, free
+**Cons:** Requires Docker, manual backups, local-only access
+
+### Option 2: Supabase (Cloud PostgreSQL)
+
+Best for cloud deployment and remote access:
+
+1. Create free Supabase account at https://supabase.com
+2. Get connection string from Settings > Database
+3. Configure environment:
+
+```bash
+# In .env
+DATABASE_TYPE=supabase
+SUPABASE_URL=postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+```
+
+4. Run migrations:
+
+```bash
+make migrate
+```
+
+5. Start scraping:
+
+```bash
+hkjc-scraper 2025/12/23
+```
+
+**Pros:** No Docker needed, automatic backups, remote access, managed infrastructure
+**Cons:** Requires internet, free tier limits (500MB, 2GB bandwidth/month)
+
+**See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for detailed setup guide.**
+
+### Switching Between Databases
+
+Change `DATABASE_TYPE` in `.env`:
+- `DATABASE_TYPE=local` - Use local Docker PostgreSQL
+- `DATABASE_TYPE=supabase` - Use Supabase cloud PostgreSQL
+
+Data is isolated per database (switching doesn't migrate data).
+
 ## Usage
 
 ### Using Makefile (Recommended)
@@ -272,6 +336,90 @@ Then open http://localhost:5050 in your browser:
    - Database: `hkjc_racing`
    - Username: `hkjc_user`
    - Password: `hkjc_password`
+
+## Logging & Monitoring
+
+### Summary Reports
+
+Every scraping run displays a comprehensive summary report:
+
+```
+============================================================
+SCRAPING SUMMARY
+============================================================
+Duration: 45.2s (0.8 minutes)
+
+Date Statistics:
+  Total dates processed: 7
+  Successfully scraped:  6
+  Skipped (existing):    1
+  Failed (errors):       0
+  Success rate:          100.0%
+
+Data Statistics:
+  Races scraped:         60
+  Runners saved:         720
+  Sectionals saved:      7200
+  Profiles saved:        180
+
+Validation Statistics:
+  Invalid runners:       2
+  Invalid profiles:      0
+
+Error Breakdown:
+  Network errors:        0
+  Parse errors:          0
+  Database errors:       0
+  Other errors:          0
+  Total errors:          0
+============================================================
+```
+
+### Log Files
+
+All operations are logged to `hkjc_scraper.log`:
+
+```bash
+# View recent logs
+tail -f hkjc_scraper.log
+
+# Search for errors
+grep ERROR hkjc_scraper.log
+
+# View validation issues
+grep "Invalid record" hkjc_scraper.log
+```
+
+**Log Format:**
+```
+2026-01-06 14:30:45 - hkjc_scraper.cli - INFO - Scraping completed: 6/7 successful
+2026-01-06 14:30:45 - hkjc_scraper.scraper - ERROR - Parse error for 2025/12/23: Missing field
+```
+
+### Log Level Control
+
+Control logging verbosity via environment variable:
+
+```bash
+# Normal operation (default)
+LOG_LEVEL=INFO hkjc-scraper 2025/12/23
+
+# Verbose debugging
+LOG_LEVEL=DEBUG hkjc-scraper 2025/12/23
+
+# Errors only
+LOG_LEVEL=ERROR hkjc-scraper 2025/12/23
+```
+
+**Configuration in .env:**
+```env
+LOG_LEVEL=INFO              # DEBUG, INFO, WARNING, ERROR
+LOG_FILE=hkjc_scraper.log   # Path to log file
+```
+
+**Console vs File Output:**
+- **Console**: Clean, user-friendly messages (INFO and above)
+- **File**: Detailed logs with timestamps (DEBUG and above)
 
 ## Database Schema
 
@@ -409,7 +557,7 @@ uv run mypy .
 ## Development Status
 
 **Current Phase:** Phase 3 - Production Hardening
-**Overall Completion:** ~85%
+**Overall Completion:** ~98%
 
 ### Completed Phases
 
@@ -427,15 +575,18 @@ uv run mypy .
 - ✅ Sectional time scraping (DisplaySectionalTime.aspx)
 - ✅ Horse profile scraping (Horse.aspx)
 - ✅ Incremental updates (--date-range, --backfill, --update modes)
-- ✅ Data validation (validators.py with semi-strict mode) - **NEW!**
+- ✅ Data validation (validators.py with semi-strict mode)
 
-### Current Focus (Phase 3: Production Hardening)
-Priority items for production readiness:
-- Add comprehensive error handling
-- Enhance logging system (basic logging configured, needs improvement)
-- Add retry logic for HTTP requests
-- Add rate limiting
-- Write pytest test suite (validator tests exist in test_validators.py)
+**Phase 3: Production Hardening** ✅ 98% COMPLETED
+- ✅ Comprehensive error handling with retry logic (Phase 3.1) - **NEW!**
+- ✅ Enhanced logging system with dual output (console + file) (Phase 3.2) - **NEW!**
+- ✅ Summary reports with detailed statistics (Phase 3.2) - **NEW!**
+- ✅ Rate limiting for HTTP requests (Phase 3.1) - **NEW!**
+- ✅ Supabase cloud database integration (Phase 3.4) - **NEW!**
+- ❌ Comprehensive pytest test suite (validator tests exist in test_validators.py)
+
+### Current Focus
+- Write comprehensive pytest test suite for scraping functions
 
 ### Quick Start for Contributors
 ```bash

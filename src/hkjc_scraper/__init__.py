@@ -29,13 +29,38 @@ from hkjc_scraper.scraper import scrape_meeting
 __version__ = "0.1.0"
 
 
-def setup_logging(level=logging.INFO):
-    """Setup package-level logging"""
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("hkjc_scraper.log", encoding="utf-8")],
-    )
+def setup_logging(level=None, log_file=None):
+    """Setup package-level logging with config support"""
+    # Import config here to avoid circular dependency
+    from hkjc_scraper import config as cfg
+
+    # Use config values if not explicitly provided
+    if level is None:
+        level_str = cfg.LOG_LEVEL.upper()
+        level = getattr(logging, level_str, logging.INFO)
+
+    if log_file is None:
+        log_file = cfg.LOG_FILE
+
+    # Create formatters
+    detailed_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console_formatter = logging.Formatter("%(message)s")  # Simplified for console
+
+    # Console handler (stdout) - shows INFO and above with simple format
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
+
+    # File handler - shows everything with detailed format
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(detailed_formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
 
 
 # Setup logging on import

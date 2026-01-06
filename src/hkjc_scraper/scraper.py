@@ -767,7 +767,7 @@ def scrape_meeting(date_ymd: str):
         for item in race_links:
             local_url = item["url"]
             venue_code = item["racecourse"]  # ST / HV
-            print(f"Scraping race page: {local_url}")
+            logger.info(f"Scraping race page: {local_url}")
             race_data = scrape_race_page(local_url, session, venue_code=venue_code)
 
             date_dmy = race_data["meeting"]["date_dmy"]
@@ -776,7 +776,7 @@ def scrape_meeting(date_ymd: str):
             sectional_url = f"{BASE}/displaysectionaltime?racedate={date_dmy}&RaceNo={race_no}"
             race_data["race"]["sectional_url"] = sectional_url
 
-            print(f"  Scraping sectional: date={date_dmy}, race_no={race_no}")
+            logger.debug(f"Scraping sectional: date={date_dmy}, race_no={race_no}")
             sectional = scrape_sectional_time(date_dmy, race_no, session)
 
             race_data["horse_sectionals"] = sectional["horse_sectionals"]
@@ -786,14 +786,14 @@ def scrape_meeting(date_ymd: str):
             for horse in race_data["horses"]:
                 hkjc_horse_id = horse.get("hkjc_horse_id")
                 if hkjc_horse_id and hkjc_horse_id not in scraped_horse_ids:
-                    print(f"    Scraping horse profile: {hkjc_horse_id} ({horse.get('name_cn', 'N/A')})")
+                    logger.debug(f"Scraping horse profile: {hkjc_horse_id} ({horse.get('name_cn', 'N/A')})")
                     try:
                         profile = scrape_horse_profile(hkjc_horse_id, session)
                         profile["hkjc_horse_id"] = hkjc_horse_id  # Add ID for matching
                         horse_profiles.append(profile)
                         scraped_horse_ids.add(hkjc_horse_id)
                     except Exception as e:
-                        print(f"      Warning: Failed to scrape profile for {hkjc_horse_id}: {e}")
+                        logger.warning(f"Failed to scrape profile for {hkjc_horse_id}: {e}")
 
             # VALIDATION: Validate profiles before adding to race_data
             if horse_profiles:
