@@ -343,14 +343,40 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
         declared_wt_raw = tds[6].get_text(strip=True)
         draw_raw = tds[7].get_text(strip=True)
         margin_raw = tds[8].get_text(strip=True)
-        running_pos_raw = tds[9].get_text(" ", strip=True)
-        finish_time_str = tds[10].get_text(strip=True)
-        win_odds_raw = tds[11].get_text(strip=True)
+
+        # Handle variable table structure based on column count
+        num_cols = len(tds)
+
+        # Old format (11 cols): NO running_pos column
+        #   - columns 0-8 same as modern
+        #   - column 9: finish_time (not running_pos!)
+        #   - column 10: win_odds
+        # Modern format (12 cols): HAS running_pos column
+        #   - columns 0-8 same as old
+        #   - column 9: running_pos
+        #   - column 10: finish_time
+        #   - column 11: win_odds
+
+        if num_cols >= 12:
+            # Modern format: has running_pos column
+            running_pos_raw = tds[9].get_text(" ", strip=True)
+            finish_time_str = tds[10].get_text(strip=True)
+            win_odds_raw = tds[11].get_text(strip=True)
+        elif num_cols == 11:
+            # Old format: no running_pos, finish_time and win_odds shifted left
+            running_pos_raw = None
+            finish_time_str = tds[9].get_text(strip=True)
+            win_odds_raw = tds[10].get_text(strip=True)
+        else:
+            # Unknown format or incomplete data
+            running_pos_raw = None
+            finish_time_str = tds[9].get_text(strip=True) if num_cols > 9 else None
+            win_odds_raw = tds[10].get_text(strip=True) if num_cols > 10 else None
 
         actual_weight = to_int_or_none(actual_wt_raw)
         declared_weight = to_int_or_none(declared_wt_raw)
         draw = to_int_or_none(draw_raw)
-        win_odds = to_decimal_or_none(win_odds_raw)
+        win_odds = to_decimal_or_none(win_odds_raw) if win_odds_raw else None
 
         # horse master
         if horse_code not in horses:
@@ -777,9 +803,12 @@ def scrape_meeting(date_ymd: str):
             race_data["race"]["sectional_url"] = sectional_url
 
             logger.debug(f"Scraping sectional: date={date_dmy}, race_no={race_no}")
-            sectional = scrape_sectional_time(date_dmy, race_no, session)
-
-            race_data["horse_sectionals"] = sectional["horse_sectionals"]
+            try:
+                sectional = scrape_sectional_time(date_dmy, race_no, session)
+                race_data["horse_sectionals"] = sectional["horse_sectionals"]
+            except (ParseError, Exception) as e:
+                logger.info(f"Sectional times not available for race {race_no} on {date_dmy}: {e}")
+                race_data["horse_sectionals"] = []
 
             # Scrape horse profiles for all horses in this race
             horse_profiles = []
