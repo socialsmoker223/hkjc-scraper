@@ -151,23 +151,22 @@ def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
 def upsert_jockey(db: Session, jockey_data: dict[str, Any]) -> Jockey:
     """
     插入或更新 jockey
-    Insert or update jockey (unique by code)
+    Insert or update jockey (unique by name_cn)
 
     Args:
         db: Database session
-        jockey_data: Dictionary with keys: code, name_cn, name_en
+        jockey_data: Dictionary with keys: name_cn, code (optional), name_en
 
     Returns:
         Jockey object
     """
-    stmt = select(Jockey).where(Jockey.code == jockey_data["code"])
+    stmt = select(Jockey).where(Jockey.name_cn == jockey_data["name_cn"])
     jockey = db.execute(stmt).scalar_one_or_none()
 
     if jockey:
         # Update existing
         for key, value in jockey_data.items():
-            if key != "code":
-                setattr(jockey, key, value)
+            setattr(jockey, key, value)
     else:
         # Insert new
         jockey = Jockey(**jockey_data)
@@ -180,23 +179,22 @@ def upsert_jockey(db: Session, jockey_data: dict[str, Any]) -> Jockey:
 def upsert_trainer(db: Session, trainer_data: dict[str, Any]) -> Trainer:
     """
     插入或更新 trainer
-    Insert or update trainer (unique by code)
+    Insert or update trainer (unique by name_cn)
 
     Args:
         db: Database session
-        trainer_data: Dictionary with keys: code, name_cn, name_en
+        trainer_data: Dictionary with keys: name_cn, code (optional), name_en
 
     Returns:
         Trainer object
     """
-    stmt = select(Trainer).where(Trainer.code == trainer_data["code"])
+    stmt = select(Trainer).where(Trainer.name_cn == trainer_data["name_cn"])
     trainer = db.execute(stmt).scalar_one_or_none()
 
     if trainer:
         # Update existing
         for key, value in trainer_data.items():
-            if key != "code":
-                setattr(trainer, key, value)
+            setattr(trainer, key, value)
     else:
         # Insert new
         trainer = Trainer(**trainer_data)
@@ -386,17 +384,17 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
             horse = upsert_horse(db, horse_data)
             horse_map[horse.code] = horse.id
 
-        # 4. Save jockeys and create code -> jockey_id mapping
-        jockey_map = {}  # code -> jockey_id
+        # 4. Save jockeys and create name_cn -> jockey_id mapping
+        jockey_map = {}  # name_cn -> jockey_id
         for jockey_data in race_data["jockeys"]:
             jockey = upsert_jockey(db, jockey_data)
-            jockey_map[jockey.code] = jockey.id
+            jockey_map[jockey.name_cn] = jockey.id
 
-        # 5. Save trainers and create code -> trainer_id mapping
-        trainer_map = {}  # code -> trainer_id
+        # 5. Save trainers and create name_cn -> trainer_id mapping
+        trainer_map = {}  # name_cn -> trainer_id
         for trainer_data in race_data["trainers"]:
             trainer = upsert_trainer(db, trainer_data)
-            trainer_map[trainer.code] = trainer.id
+            trainer_map[trainer.name_cn] = trainer.id
 
         # 6. Save runners (with FK resolution)
         runner_map = {}  # horse_code -> runner_id
@@ -406,10 +404,10 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
             # Resolve foreign keys
             runner_dict["race_id"] = race.id
             runner_dict["horse_id"] = horse_map[runner_data["horse_code"]]
-            runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_code"))
-            runner_dict["trainer_id"] = trainer_map.get(runner_data.get("trainer_code"))
+            runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_name_cn"))
+            runner_dict["trainer_id"] = trainer_map.get(runner_data.get("trainer_name_cn"))
 
-            # Remove code fields (not in Runner model)
+            # Remove fields not in Runner model
             runner_dict.pop("horse_code", None)
             runner_dict.pop("jockey_code", None)
             runner_dict.pop("trainer_code", None)
