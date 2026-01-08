@@ -48,15 +48,7 @@ CREATE TABLE IF NOT EXISTS horse (
     name_cn VARCHAR(128),
     name_en VARCHAR(128),
     hkjc_horse_id VARCHAR(32) UNIQUE,  -- HK_2023_J344
-    profile_url TEXT
-);
-
-CREATE INDEX idx_horse_code ON horse(code);
-CREATE INDEX idx_horse_hkjc_id ON horse(hkjc_horse_id);
-
-CREATE TABLE IF NOT EXISTS horse_profile (
-    id BIGSERIAL PRIMARY KEY,
-    horse_id BIGINT NOT NULL REFERENCES horse(id) ON DELETE CASCADE,
+    profile_url TEXT,
     origin VARCHAR(64),
     age INT,
     colour VARCHAR(32),
@@ -77,9 +69,11 @@ CREATE TABLE IF NOT EXISTS horse_profile (
     season_start_rating INT,
     sire_name VARCHAR(128),
     dam_name VARCHAR(128),
-    dam_sire_name VARCHAR(128),
-    UNIQUE(horse_id)
+    dam_sire_name VARCHAR(128)
 );
+
+CREATE INDEX idx_horse_code ON horse(code);
+CREATE INDEX idx_horse_hkjc_id ON horse(hkjc_horse_id);
 
 CREATE TABLE IF NOT EXISTS horse_profile_history (
     id BIGSERIAL PRIMARY KEY,

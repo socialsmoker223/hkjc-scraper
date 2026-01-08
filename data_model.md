@@ -47,12 +47,6 @@
 - `name_en` VARCHAR(128) NULL  
 - `hkjc_horse_id` VARCHAR(32) UNIQUE — HK_2023_J344  
 - `profile_url` TEXT  
-
-關係：1:1 → `horse_profile`，1:N → `runner`, `horse_sectional`。[3]
-
-**horse_profile**（最新快照）  
-- `id` BIGSERIAL PK  
-- `horse_id` BIGINT FK → `horse.id` UNIQUE  
 - `origin` VARCHAR(64)  
 - `age` INT  
 - `colour` VARCHAR(32)  
@@ -75,13 +69,13 @@
 - `dam_name` VARCHAR(128)  
 - `dam_sire_name` VARCHAR(128)  
 
-資料來源為馬匹資料頁中間 horseProfile 區塊的靜態與近期資訊。[4]
+關係：1:N → `runner`, `horse_sectional`, 1:N → `horse_profile_history`。[3]
 
 **horse_profile_history**（每次更新一筆快照）  
 - `id` BIGSERIAL PK  
 - `horse_id` BIGINT FK → `horse.id`  
 - `captured_at` TIMESTAMPTZ — 抓取時間  
-- 其餘欄位同 `horse_profile`：  
+- 其餘欄位同 `horse` profile 欄位：  
   - `origin`, `age`, `colour`, `sex`, `import_type`,  
   - `season_prize_hkd`, `lifetime_prize_hkd`,  
   - `record_wins`, `record_seconds`, `record_thirds`, `record_starts`,  

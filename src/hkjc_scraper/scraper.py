@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from hkjc_scraper.config import config
 from hkjc_scraper.exceptions import ParseError
 from hkjc_scraper.http_utils import HTTPSession, rate_limited, retry_on_network_error
-from hkjc_scraper.validators import validate_horse_profiles, validate_meeting, validate_race, validate_runners
+from hkjc_scraper.validators import validate_meeting, validate_race, validate_runners
 
 BASE = "https://racing.hkjc.com/zh-hk/local/information"
 logger = logging.getLogger(__name__)
@@ -326,6 +326,7 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
 
         m_code = re.search(r"\(([A-Z0-9]+)\)", horse_name_cn)
         horse_code = m_code.group(1) if m_code else None
+        horse_name_cn = horse_name_cn.split(" ")[0]
 
         jockey_cell = tds[3]
         jockey_link = jockey_cell.find("a")
@@ -784,7 +785,6 @@ def scrape_meeting(date_ymd: str):
         'trainers': [...],
         'runners': [...],
         'horse_sectionals': [...],
-        'horse_profiles': [...]
       }
 
     Args:
@@ -817,35 +817,20 @@ def scrape_meeting(date_ymd: str):
                 race_data["horse_sectionals"] = []
 
             # Scrape horse profiles for all horses in this race
-            horse_profiles = []
+            # Scrape horse profiles for all horses in this race
+            # And merge directly into the horse dict
             for horse in race_data["horses"]:
                 hkjc_horse_id = horse.get("hkjc_horse_id")
                 if hkjc_horse_id and hkjc_horse_id not in scraped_horse_ids:
                     logger.debug(f"Scraping horse profile: {hkjc_horse_id} ({horse.get('name_cn', 'N/A')})")
                     try:
                         profile = scrape_horse_profile(hkjc_horse_id, session)
-                        profile["hkjc_horse_id"] = hkjc_horse_id  # Add ID for matching
-                        horse_profiles.append(profile)
+                        # Merge profile fields into horse dict
+                        horse.update(profile)
                         scraped_horse_ids.add(hkjc_horse_id)
                     except Exception as e:
                         logger.warning(f"Failed to scrape profile for {hkjc_horse_id}: {e}")
-
-            # VALIDATION: Validate profiles before adding to race_data
-            if horse_profiles:
-                profiles_validation = validate_horse_profiles(horse_profiles)
-
-                if profiles_validation.invalid_count > 0:
-                    logger.warning(
-                        f"Skipped {profiles_validation.invalid_count}/{profiles_validation.total_count} "
-                        "invalid horse profiles"
-                    )
-
-                race_data["horse_profiles"] = profiles_validation.valid_records
-                race_data["validation_summary"]["profiles_total"] = profiles_validation.total_count
-                race_data["validation_summary"]["profiles_valid"] = profiles_validation.valid_count
-                race_data["validation_summary"]["profiles_invalid"] = profiles_validation.invalid_count
-            else:
-                race_data["horse_profiles"] = []
+            
 
             all_races.append(race_data)
 

@@ -104,12 +104,32 @@ class Horse(Base):
     hkjc_horse_id: Mapped[Optional[str]] = mapped_column(VARCHAR(32), unique=True)
     profile_url: Mapped[Optional[str]] = mapped_column(TEXT)
 
+    # Merged profile fields
+    origin: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
+    age: Mapped[Optional[int]] = mapped_column(INT)
+    colour: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
+    sex: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
+    import_type: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
+    season_prize_hkd: Mapped[Optional[int]] = mapped_column(INT)
+    lifetime_prize_hkd: Mapped[Optional[int]] = mapped_column(INT)
+    record_wins: Mapped[Optional[int]] = mapped_column(INT)
+    record_seconds: Mapped[Optional[int]] = mapped_column(INT)
+    record_thirds: Mapped[Optional[int]] = mapped_column(INT)
+    record_starts: Mapped[Optional[int]] = mapped_column(INT)
+    last10_starts: Mapped[Optional[int]] = mapped_column(INT)
+    current_location: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
+    current_location_date: Mapped[Optional[date]] = mapped_column(DATE)
+    import_date: Mapped[Optional[date]] = mapped_column(DATE)
+    owner_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
+    current_rating: Mapped[Optional[int]] = mapped_column(INT)
+    season_start_rating: Mapped[Optional[int]] = mapped_column(INT)
+    sire_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
+    dam_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
+    dam_sire_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
+
     # Relationships
-    profile: Mapped[Optional["HorseProfile"]] = relationship(
-        "HorseProfile", back_populates="horse", uselist=False, cascade="all, delete-orphan"
-    )
-    profile_history: Mapped[list["HorseProfileHistory"]] = relationship(
-        "HorseProfileHistory", back_populates="horse", cascade="all, delete-orphan"
+    history: Mapped[list["HorseHistory"]] = relationship(
+        "HorseHistory", back_populates="horse", cascade="all, delete-orphan"
     )
     runners: Mapped[list["Runner"]] = relationship("Runner", back_populates="horse", cascade="all, delete-orphan")
     sectionals: Mapped[list["HorseSectional"]] = relationship(
@@ -125,48 +145,23 @@ class Horse(Base):
         return f"<Horse(id={self.id}, code={self.code}, name={self.name_cn})>"
 
 
-class HorseProfile(Base):
-    __tablename__ = "horse_profile"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    horse_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("horse.id", ondelete="CASCADE"), unique=True, nullable=False
-    )
-    origin: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
-    age: Mapped[Optional[int]] = mapped_column(INT)
-    colour: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
-    sex: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
-    import_type: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
-    season_prize_hkd: Mapped[Optional[int]] = mapped_column(INT)
-    lifetime_prize_hkd: Mapped[Optional[int]] = mapped_column(INT)
-    record_wins: Mapped[Optional[int]] = mapped_column(INT)
-    record_seconds: Mapped[Optional[int]] = mapped_column(INT)
-    record_thirds: Mapped[Optional[int]] = mapped_column(INT)
-    record_starts: Mapped[Optional[int]] = mapped_column(INT)
-    last10_starts: Mapped[Optional[int]] = mapped_column(INT)
-    current_location: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
-    current_location_date: Mapped[Optional[date]] = mapped_column(DATE)
-    import_date: Mapped[Optional[date]] = mapped_column(DATE)
-    owner_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
-    current_rating: Mapped[Optional[int]] = mapped_column(INT)
-    season_start_rating: Mapped[Optional[int]] = mapped_column(INT)
-    sire_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
-    dam_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
-    dam_sire_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
-
-    # Relationships
-    horse: Mapped["Horse"] = relationship("Horse", back_populates="profile")
-
-    def __repr__(self) -> str:
-        return f"<HorseProfile(horse_id={self.horse_id}, rating={self.current_rating})>"
 
 
-class HorseProfileHistory(Base):
-    __tablename__ = "horse_profile_history"
+class HorseHistory(Base):
+    __tablename__ = "horse_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     horse_id: Mapped[int] = mapped_column(Integer, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+
+    # Identity fields
+    code: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
+    name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
+    name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
+    hkjc_horse_id: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
+    profile_url: Mapped[Optional[str]] = mapped_column(TEXT)
+
+    # Profile fields
     origin: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     age: Mapped[Optional[int]] = mapped_column(INT)
     colour: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
@@ -190,15 +185,15 @@ class HorseProfileHistory(Base):
     dam_sire_name: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
 
     # Relationships
-    horse: Mapped["Horse"] = relationship("Horse", back_populates="profile_history")
+    horse: Mapped["Horse"] = relationship("Horse", back_populates="history")
 
     __table_args__ = (
-        UniqueConstraint("horse_id", "captured_at", name="uq_horse_profile_history_horse_captured"),
-        Index("idx_horse_profile_history_horse_captured", "horse_id", "captured_at"),
+        UniqueConstraint("horse_id", "captured_at", name="uq_horse_history_horse_captured"),
+        Index("idx_horse_history_horse_captured", "horse_id", "captured_at"),
     )
 
     def __repr__(self) -> str:
-        return f"<HorseProfileHistory(horse_id={self.horse_id}, captured_at={self.captured_at})>"
+        return f"<HorseHistory(horse_id={self.horse_id}, captured_at={self.captured_at})>"
 
 
 # ============================================================================

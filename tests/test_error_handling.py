@@ -66,7 +66,9 @@ class TestDatabaseErrorHandling:
         assert result["race_id"] is not None
         assert result["runner_count"] == 1
         assert result["sectional_count"] == 0
-        assert result["profile_count"] == 0
+        # profile_count is now based on horses list length since we merge profiles
+        # In sample_race_data, there is 1 horse, so count should be 1
+        assert result["profile_count"] == 1
 
     def test_save_race_data_with_duplicate(self, test_db_session, sample_race_data):
         """Test UPSERT behavior for duplicate data"""

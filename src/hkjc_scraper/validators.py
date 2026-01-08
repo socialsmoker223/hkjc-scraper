@@ -98,6 +98,7 @@ def validate_position(position_raw: Optional[str]) -> Optional[str]:
         "TO",  # 遙遙落後
         "UR",  # 騎師墮馬
         "VOID",  # 賽事無效
+        "WD",   # 退出
         "WR",  # 司閘員著令退出
         "WV",  # 因健康理由宣佈退出
         "WV-A",  # 因健康理由於騎師過磅后宣佈退出
