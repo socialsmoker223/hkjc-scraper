@@ -329,15 +329,21 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
 
         jockey_cell = tds[3]
         jockey_link = jockey_cell.find("a")
-        jockey_code, jockey_name_cn = (None, jockey_cell.get_text(strip=True))
+        jockey_name_cn = jockey_cell.get_text(strip=True)
         if jockey_link:
             jockey_code, jockey_name_cn = parse_jockey_link(jockey_link)
+        else:
+            # For old races without links, use name as code
+            jockey_code = jockey_name_cn
 
         trainer_cell = tds[4]
         trainer_link = trainer_cell.find("a")
-        trainer_code, trainer_name_cn = (None, trainer_cell.get_text(strip=True))
+        trainer_name_cn = trainer_cell.get_text(strip=True)
         if trainer_link:
             trainer_code, trainer_name_cn = parse_trainer_link(trainer_link)
+        else:
+            # For old races without links, use name as code
+            trainer_code = trainer_name_cn
 
         actual_wt_raw = tds[5].get_text(strip=True)
         declared_wt_raw = tds[6].get_text(strip=True)
