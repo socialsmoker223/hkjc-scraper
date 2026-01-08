@@ -187,14 +187,14 @@ def parse_horse_link(a_tag):
     """
     href = a_tag.get("href") or ""
     full = urljoin("https://racing.hkjc.com", href)
-    m_id = re.search(r"HorseId=(HK_\d+_[A-Z0-9]+)", href)
+    m_id = re.search(r"horseid=(HK_\d+_[A-Z0-9]+)", href)
     hkjc_horse_id = m_id.group(1) if m_id else None
     return hkjc_horse_id, full
 
 
 def parse_jockey_link(a_tag):
     href = a_tag.get("href") or ""
-    m = re.search(r"JockeyId=([A-Z0-9]+)", href)
+    m = re.search(r"jockeyid=([A-Z0-9]+)", href)
     code = m.group(1) if m else None
     name_cn = a_tag.get_text(strip=True)
     return code, name_cn
@@ -202,7 +202,7 @@ def parse_jockey_link(a_tag):
 
 def parse_trainer_link(a_tag):
     href = a_tag.get("href") or ""
-    m = re.search(r"TrainerId=([A-Z0-9]+)", href)
+    m = re.search(r"trainerid=([A-Z0-9]+)", href)
     code = m.group(1) if m else None
     name_cn = a_tag.get_text(strip=True)
     return code, name_cn
@@ -394,15 +394,15 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
                 "profile_url": horse_profile_url,
             }
 
-        if jockey_code and jockey_code not in jockeys:
-            jockeys[jockey_code] = {
+        if jockey_name_cn and jockey_name_cn not in jockeys:
+            jockeys[jockey_name_cn] = {
                 "code": jockey_code,
                 "name_cn": jockey_name_cn,
                 "name_en": None,
             }
 
-        if trainer_code and trainer_code not in trainers:
-            trainers[trainer_code] = {
+        if trainer_name_cn and trainer_name_cn not in trainers:
+            trainers[trainer_name_cn] = {
                 "code": trainer_code,
                 "name_cn": trainer_name_cn,
                 "name_en": None,

@@ -210,8 +210,8 @@ class Jockey(Base):
     __tablename__ = "jockey"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(VARCHAR(16), unique=True, nullable=False)
-    name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
+    code: Mapped[Optional[str]] = mapped_column(VARCHAR(16), unique=True)
+    name_cn: Mapped[str] = mapped_column(VARCHAR(64), unique=True, nullable=False)
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
 
     # Relationships
@@ -227,8 +227,8 @@ class Trainer(Base):
     __tablename__ = "trainer"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(VARCHAR(16), unique=True, nullable=False)
-    name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
+    code: Mapped[Optional[str]] = mapped_column(VARCHAR(16), unique=True)
+    name_cn: Mapped[str] = mapped_column(VARCHAR(64), unique=True, nullable=False)
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
 
     # Relationships

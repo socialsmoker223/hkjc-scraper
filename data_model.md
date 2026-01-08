@@ -95,19 +95,19 @@
 
 ## 騎師與練馬師
 
-**jockey**  
-- `id` BIGSERIAL PK  
-- `code` VARCHAR(16) UNIQUE — 由 `JockeyId` 抽出  
-- `name_cn` VARCHAR(64)  
-- `name_en` VARCHAR(64) NULL  
+**jockey**
+- `id` BIGSERIAL PK
+- `code` VARCHAR(16) UNIQUE NULL — 由 `JockeyId` 抽出（舊賽事可能無 code）
+- `name_cn` VARCHAR(64) UNIQUE NOT NULL — 主鍵識別欄位
+- `name_en` VARCHAR(64) NULL
 
-**trainer**  
-- `id` BIGSERIAL PK  
-- `code` VARCHAR(16) UNIQUE — 由 `TrainerId` 抽出  
-- `name_cn` VARCHAR(64)  
-- `name_en` VARCHAR(64) NULL  
+**trainer**
+- `id` BIGSERIAL PK
+- `code` VARCHAR(16) UNIQUE NULL — 由 `TrainerId` 抽出（舊賽事可能無 code）
+- `name_cn` VARCHAR(64) UNIQUE NOT NULL — 主鍵識別欄位
+- `name_en` VARCHAR(64) NULL
 
-兩者來自 LocalResults 成績表中的騎師及練馬師欄位超連結與文字。[2]
+兩者來自 LocalResults 成績表中的騎師及練馬師欄位超連結與文字。`name_cn` 作為唯一識別鍵，因為舊賽事資料可能沒有 URL 連結（無 code）。[2]
 
 ***
 
