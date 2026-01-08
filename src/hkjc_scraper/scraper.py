@@ -723,7 +723,30 @@ def scrape_sectional_time(date_dmy: str, race_no: int, session: HTTPSession):
         if num_sections:
             segment_cells = segment_cells[:num_sections]
 
-            horse_name_cn_clean = horse_name.split("(")[0].strip()
+        horse_name_cn_clean = horse_name.split("(")[0].strip()
+
+        for idx, cell in enumerate(segment_cells, start=1):
+            raw = cell.get_text(" ", strip=True) or ""
+            raw_norm = re.sub(r"\s+", " ", raw).strip()
+
+            pos = None
+            margin = None
+            times = []
+
+            if raw_norm:
+                parts = raw_norm.split(" ")
+                if parts and parts[0].isdigit():
+                    pos = int(parts[0])
+                if len(parts) >= 2:
+                    margin = parts[1]
+                for v in parts[2:]:
+                    if re.match(r"\d+\.\d+", v):
+                        times.append(Decimal(v))
+
+            time_main = times[0] if len(times) >= 1 else None
+            time_sub1 = times[1] if len(times) >= 2 else None
+            time_sub2 = times[2] if len(times) >= 3 else None
+            time_sub3 = times[3] if len(times) >= 4 else None
 
             horse_sectionals.append(
                 {
