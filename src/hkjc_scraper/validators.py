@@ -236,7 +236,7 @@ def validate_runner(runner: dict[str, Any]) -> None:
     Raises: ValidationError if validation fails
     """
     # Required fields
-    required = ["horse_code"]
+    required = ["horse_code", "horse_name_cn"]
     for field in required:
         if not runner.get(field):
             raise ValidationError(f"Required field missing: {field}")

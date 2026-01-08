@@ -386,8 +386,9 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
         win_odds = to_decimal_or_none(win_odds_raw) if win_odds_raw else None
 
         # horse master
-        if horse_code not in horses:
-            horses[horse_code] = {
+        horse_key = (horse_code, horse_name_cn)
+        if horse_key not in horses:
+            horses[horse_key] = {
                 "code": horse_code,
                 "name_cn": horse_name_cn,
                 "name_en": None,
@@ -722,28 +723,7 @@ def scrape_sectional_time(date_dmy: str, race_no: int, session: HTTPSession):
         if num_sections:
             segment_cells = segment_cells[:num_sections]
 
-        for idx, cell in enumerate(segment_cells, start=1):
-            raw = cell.get_text(" ", strip=True) or ""
-            raw_norm = re.sub(r"\s+", " ", raw).strip()
-
-            pos = None
-            margin = None
-            times = []
-
-            if raw_norm:
-                parts = raw_norm.split(" ")
-                if parts and parts[0].isdigit():
-                    pos = int(parts[0])
-                if len(parts) >= 2:
-                    margin = parts[1]
-                for v in parts[2:]:
-                    if re.match(r"\d+\.\d+", v):
-                        times.append(Decimal(v))
-
-            time_main = times[0] if len(times) >= 1 else None
-            time_sub1 = times[1] if len(times) >= 2 else None
-            time_sub2 = times[2] if len(times) >= 3 else None
-            time_sub3 = times[3] if len(times) >= 4 else None
+            horse_name_cn_clean = horse_name.split("(")[0].strip()
 
             horse_sectionals.append(
                 {
@@ -751,6 +731,7 @@ def scrape_sectional_time(date_dmy: str, race_no: int, session: HTTPSession):
                     "finish_order": finish_order,
                     "horse_no": int(horse_no_raw) if horse_no_raw.isdigit() else None,
                     "horse_code": horse_code,
+                    "horse_name_cn": horse_name_cn_clean,
                     "hkjc_horse_id": hkjc_horse_id,
                     "section_no": idx,
                     "position": pos,

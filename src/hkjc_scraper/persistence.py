@@ -131,13 +131,16 @@ def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
     Returns:
         Horse object
     """
-    stmt = select(Horse).where(Horse.code == horse_data["code"])
+    stmt = select(Horse).where(
+        Horse.code == horse_data["code"],
+        Horse.name_cn == horse_data.get("name_cn"),
+    )
     horse = db.execute(stmt).scalar_one_or_none()
 
     if horse:
         # Update existing
         for key, value in horse_data.items():
-            if key != "code":  # Don't update the unique key
+            if key not in ("code", "name_cn"):  # Don't update the unique key parts
                 setattr(horse, key, value)
     else:
         # Insert new
@@ -376,11 +379,11 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
         race = upsert_race(db, race_dict)
         result["race_id"] = race.id
 
-        # 3. Save horses and create code -> horse_id mapping
-        horse_map = {}  # code -> horse_id
+        # 3. Save horses and create (code, name_cn) -> horse_id mapping
+        horse_map = {}  # (code, name_cn) -> horse_id
         for horse_data in race_data["horses"]:
             horse = upsert_horse(db, horse_data)
-            horse_map[horse.code] = horse.id
+            horse_map[(horse.code, horse.name_cn)] = horse.id
             
             # If we have profile data (e.g. origin is set), create a history record
             # We check a few key profile fields to determine if we should save history
@@ -401,23 +404,28 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
             trainer_map[trainer.name_cn] = trainer.id
 
         # 6. Save runners (with FK resolution)
-        runner_map = {}  # horse_code -> runner_id
+        runner_map = {}  # (horse_code, horse_name_cn) -> runner_id
         for runner_data in race_data["runners"]:
             runner_dict = runner_data.copy()
 
             # Resolve foreign keys
             runner_dict["race_id"] = race.id
-            runner_dict["horse_id"] = horse_map[runner_data["horse_code"]]
+            
+            # Use composite key for lookup
+            h_key = (runner_data["horse_code"], runner_data.get("horse_name_cn"))
+            runner_dict["horse_id"] = horse_map[h_key]
+            
             runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_name_cn"))
             runner_dict["trainer_id"] = trainer_map.get(runner_data.get("trainer_name_cn"))
 
             # Remove fields not in Runner model
             runner_dict.pop("horse_code", None)
+            runner_dict.pop("horse_name_cn", None) # Ensure this is popped
             runner_dict.pop("jockey_code", None)
             runner_dict.pop("trainer_code", None)
 
             runner = upsert_runner(db, runner_dict)
-            runner_map[runner_data["horse_code"]] = runner.id
+            runner_map[h_key] = runner.id
 
         result["runner_count"] = len(runner_map)
 
@@ -428,12 +436,16 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
 
             # Resolve foreign keys
             horse_code = sectional_data["horse_code"]
+            horse_name_cn = sectional_data.get("horse_name_cn")
+            h_key = (horse_code, horse_name_cn)
+            
             sectional_dict["race_id"] = race.id
-            sectional_dict["horse_id"] = horse_map[horse_code]
-            sectional_dict["runner_id"] = runner_map[horse_code]
+            sectional_dict["horse_id"] = horse_map[h_key]
+            sectional_dict["runner_id"] = runner_map[h_key]
 
-            # Remove code field
+            # Remove code/name fields
             sectional_dict.pop("horse_code", None)
+            sectional_dict.pop("horse_name_cn", None)
 
             upsert_horse_sectional(db, sectional_dict)
             sectional_count += 1

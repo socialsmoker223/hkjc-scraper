@@ -98,7 +98,7 @@ class Horse(Base):
     __tablename__ = "horse"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(VARCHAR(16), unique=True, nullable=False)
+    code: Mapped[str] = mapped_column(VARCHAR(16), nullable=False)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     hkjc_horse_id: Mapped[Optional[str]] = mapped_column(VARCHAR(32), unique=True)
@@ -137,6 +137,7 @@ class Horse(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("code", "name_cn", name="uq_horse_code_name"),
         Index("idx_horse_code", "code"),
         Index("idx_horse_hkjc_id", "hkjc_horse_id"),
     )
