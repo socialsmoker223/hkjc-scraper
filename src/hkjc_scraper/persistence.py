@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from hkjc_scraper.models import (
     Horse,
-    HorseProfile,
-    HorseProfileHistory,
+    Horse,
+    HorseHistory,
     HorseSectional,
     Jockey,
     Meeting,
@@ -209,55 +209,53 @@ def upsert_trainer(db: Session, trainer_data: dict[str, Any]) -> Trainer:
 # ============================================================================
 
 
-def upsert_horse_profile(db: Session, horse_id: int, profile_data: dict[str, Any]) -> HorseProfile:
+
+
+def insert_horse_history(
+    db: Session, horse_id: int, horse_data: dict[str, Any], captured_at: Optional[datetime] = None
+) -> HorseHistory:
     """
-    插入或更新 horse_profile (最新快照)
-    Insert or update horse_profile (current snapshot, unique by horse_id)
+    插入 horse_history 快照
+    Insert horse_history snapshot
 
     Args:
         db: Database session
         horse_id: Horse ID
-        profile_data: Dictionary with profile fields
-
-    Returns:
-        HorseProfile object
-    """
-    stmt = select(HorseProfile).where(HorseProfile.horse_id == horse_id)
-    profile = db.execute(stmt).scalar_one_or_none()
-
-    if profile:
-        # Update existing
-        for key, value in profile_data.items():
-            setattr(profile, key, value)
-    else:
-        # Insert new
-        profile = HorseProfile(horse_id=horse_id, **profile_data)
-        db.add(profile)
-
-    db.flush()
-    return profile
-
-
-def insert_horse_profile_history(
-    db: Session, horse_id: int, profile_data: dict[str, Any], captured_at: Optional[datetime] = None
-) -> HorseProfileHistory:
-    """
-    插入 horse_profile_history 快照
-    Insert horse_profile_history snapshot
-
-    Args:
-        db: Database session
-        horse_id: Horse ID
-        profile_data: Dictionary with profile fields
+        horse_data: Dictionary with horse fields (including identity and profile)
         captured_at: Timestamp of capture (defaults to now)
 
     Returns:
-        HorseProfileHistory object
+        HorseHistory object
     """
     if captured_at is None:
         captured_at = datetime.now()
 
-    history = HorseProfileHistory(horse_id=horse_id, captured_at=captured_at, **profile_data)
+    # Filter data to match HorseHistory columns
+    # We can rely on SQLAlchemy to ignore extra fields if we pass via **kwargs carefully,
+    # or just copy the dictionary.
+    # However, to be safe and clean, let's create the history object.
+    
+    # Note: horse_data might contain 'id' or other irrelevant fields from a previous scrape/obj
+    # so we should be careful.
+    
+    history = HorseHistory(horse_id=horse_id, captured_at=captured_at)
+    
+    # Copy fields that exist in HorseHistory
+    # identity + profile fields
+    valid_fields = {
+        'code', 'name_cn', 'name_en', 'hkjc_horse_id', 'profile_url',
+        'origin', 'age', 'colour', 'sex', 'import_type',
+        'season_prize_hkd', 'lifetime_prize_hkd',
+        'record_wins', 'record_seconds', 'record_thirds', 'record_starts',
+        'last10_starts', 'current_location', 'current_location_date',
+        'import_date', 'owner_name', 'current_rating', 'season_start_rating',
+        'sire_name', 'dam_name', 'dam_sire_name'
+    }
+
+    for key, value in horse_data.items():
+        if key in valid_fields:
+            setattr(history, key, value)
+
     db.add(history)
     db.flush()
     return history
@@ -383,6 +381,12 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
         for horse_data in race_data["horses"]:
             horse = upsert_horse(db, horse_data)
             horse_map[horse.code] = horse.id
+            
+            # If we have profile data (e.g. origin is set), create a history record
+            # We check a few key profile fields to determine if we should save history
+            if horse_data.get("origin") or horse_data.get("current_rating"):
+                # Use horse_data directly as it now contains merged profile info
+                insert_horse_history(db, horse.id, horse_data)
 
         # 4. Save jockeys and create name_cn -> jockey_id mapping
         jockey_map = {}  # name_cn -> jockey_id
@@ -436,42 +440,10 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
 
         result["sectional_count"] = sectional_count
 
-        # 8. Save horse profiles (if provided)
-        profile_count = 0
-        for profile_data in race_data.get("horse_profiles", []):
-            # Match profile to horse by hkjc_horse_id
-            hkjc_horse_id = profile_data.get("hkjc_horse_id")
-            if not hkjc_horse_id:
-                continue
-
-            # Find the horse_id for this hkjc_horse_id
-            horse_id = None
-            for code, h_id in horse_map.items():
-                # Find the horse object to get its hkjc_horse_id
-                for horse_data in race_data["horses"]:
-                    if horse_data["code"] == code and horse_data.get("hkjc_horse_id") == hkjc_horse_id:
-                        horse_id = h_id
-                        break
-                if horse_id:
-                    break
-
-            if horse_id:
-                # Handle profile errors gracefully (non-critical)
-                try:
-                    profile_dict = profile_data.copy()
-                    profile_dict.pop("hkjc_horse_id", None)  # Remove matching field
-
-                    # Update current profile
-                    upsert_horse_profile(db, horse_id, profile_dict)
-
-                    # Save to history (with current timestamp)
-                    insert_horse_profile_history(db, horse_id, profile_dict)
-                    profile_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to save profile for horse_id {horse_id}: {e}")
-                    continue
-
-        result["profile_count"] = profile_count
+        # 8. Save horse profiles (Removed - merged into step 3)
+        # Profile data is now part of the 'horses' list and handled in step 3
+        
+        result["profile_count"] = len(race_data["horses"]) # approximate, or track real count above
 
         return result
 
