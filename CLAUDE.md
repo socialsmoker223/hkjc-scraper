@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 HKJC Horse Racing Data Scraper - A Python web scraper that collects horse racing data from the Hong Kong Jockey Club (HKJC) website and stores it in PostgreSQL. Uses modern Python tooling with `uv` package manager.
 
-**Status**: Production-ready prototype (~88% complete). Core scraping, database infrastructure, data validation, error handling, and CLI features complete. Missing enhanced logging, Supabase integration, and pytest test suite for scraping functions.
+**Status**: Production-ready prototype (~88% complete). Core scraping, database infrastructure, error handling, and CLI features complete. Missing enhanced logging, Supabase integration, and pytest test suite for scraping functions.
 
 ## Development Commands
 
@@ -61,7 +61,7 @@ hkjc-scraper --update                             # Update from last DB entry to
 ```bash
 make format              # Format code with ruff
 make lint                # Run ruff linter
-make test                # Run pytest (validator tests passing)
+make test                # Run pytest
 uv run mypy .            # Type checking
 make clean               # Clean temporary files
 ```
@@ -172,41 +172,6 @@ HKJC uses URLs with IDs like `JockeyId=MDLR&...` or `HorseId=HK_2023_J344`. The 
 - Venues: "ST" (沙田/Sha Tin) or "HV" (跑馬地/Happy Valley)
 - Track types: "草地" (turf) or "泥地" (dirt)
 
-## Data Validation
-
-The scraper validates all scraped data before saving to database:
-
-**Validation Rules (Critical Only):**
-- **Position**: 1-14 or special codes (PU, WD, RO, DNF, DQ, F, WV)
-- **Weights**: 95-165 lbs (actual and declared)
-- **Odds**: Must be positive Decimal
-- **Draw**: 1-14
-- **Distance**: 1000-2850 meters
-- **Horse age**: 2-14
-- **Required fields**: date, venue_code, race_no, horse_code
-- **Horse profile consistency**:
-  - wins + seconds + thirds <= starts
-  - season_prize <= lifetime_prize
-
-**Behavior (Semi-Strict Mode):**
-- Invalid records are **skipped** with detailed logging
-- Valid records continue to be saved normally
-- Validation summary shown in CLI output
-- Logs written to `hkjc_scraper.log`
-
-**Configuration:**
-```bash
-# .env file
-VALIDATION_STRICT=false          # Semi-strict mode (default)
-VALIDATION_LOG_INVALID=true      # Log invalid records (default)
-```
-
-**Testing:**
-```bash
-# Run manual validation tests
-uv run python tests/test_validators.py
-```
-
 ## Development Context
 
 **Current State (Overall: ~98% Complete):**
@@ -218,7 +183,6 @@ uv run python tests/test_validators.py
   - ✅ Race results scraping (LocalResults.aspx)
   - ✅ Sectional time scraping (DisplaySectionalTime.aspx)
   - ✅ Horse profile scraping (Horse.aspx) - see HORSE_PROFILE_IMPLEMENTATION.md
-  - ✅ Data validation (semi-strict mode with logging)
 
 - Phase 3 (Production Hardening): ✅ 98% COMPLETED
   - ✅ Error handling & retry logic (Phase 3.1 - tenacity library with exponential backoff)
@@ -234,16 +198,15 @@ uv run python tests/test_validators.py
   - ✅ Progress bars for multi-date operations
   - ❌ Missing: Scheduling/automation (cron, APScheduler)
 
-- Phase 5 (Testing & Quality): ⏳ 50% IN PROGRESS
+- Phase 5 (Testing & Quality): ⏳ 30% IN PROGRESS
   - ✅ Tooling configured: pytest, mypy, ruff, pre-commit
-  - ✅ Tests directory created with test_validators.py
-  - ✅ Validator tests passing with 100% pass rate
+  - ✅ Tests directory created
   - ❌ No pytest unit/integration tests for scraping functions yet
 
 **Known Limitations:**
 - No concurrent scraping (sequential only, could be optimized with async)
 - Commit granularity is per-race (could batch by meeting)
-- No pytest unit/integration tests for scraping functions (validator tests exist in test_validators.py)
+- No pytest unit/integration tests for scraping functions
 
 **Next Priority: Comprehensive Test Suite (Phase 5)**
 Write pytest unit and integration tests for scraping functions to achieve better test coverage.

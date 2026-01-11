@@ -62,10 +62,6 @@ class Config:
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE = os.getenv("LOG_FILE", "hkjc_scraper.log")
 
-    # Validation settings
-    VALIDATION_STRICT = os.getenv("VALIDATION_STRICT", "false").lower() == "true"
-    VALIDATION_LOG_INVALID = os.getenv("VALIDATION_LOG_INVALID", "true").lower() == "true"
-
 
 # Singleton config instance
 config = Config()

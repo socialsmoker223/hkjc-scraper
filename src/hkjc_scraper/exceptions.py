@@ -19,9 +19,3 @@ class ParseError(HKJCScraperError):
     """Data parsing errors (not retryable)"""
 
     pass
-
-
-class DataValidationError(HKJCScraperError):
-    """Data validation errors (not retryable)"""
-
-    pass

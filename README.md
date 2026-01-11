@@ -11,7 +11,6 @@ A Python web scraper that collects horse racing data from the Hong Kong Jockey C
 - Command-line interface with comprehensive summary reports
 - **Enhanced logging system with dual output (console + file)**
 - Tracks historical horse profile changes
-- Data validation with configurable strictness
 - Error handling with automatic retry logic
 - Modern Python tooling with `uv` package manager
 
@@ -362,10 +361,6 @@ Data Statistics:
   Sectionals saved:      7200
   Profiles saved:        180
 
-Validation Statistics:
-  Invalid runners:       2
-  Invalid profiles:      0
-
 Error Breakdown:
   Network errors:        0
   Parse errors:          0
@@ -385,9 +380,6 @@ tail -f hkjc_scraper.log
 
 # Search for errors
 grep ERROR hkjc_scraper.log
-
-# View validation issues
-grep "Invalid record" hkjc_scraper.log
 ```
 
 **Log Format:**
@@ -556,7 +548,7 @@ uv run mypy .
 
 ## Development Status
 
-**Current Phase:** Phase 3 - Production Hardening
+**Current Phase:** Phase 5 - Quality & Testing
 **Overall Completion:** ~98%
 
 ### Completed Phases
@@ -575,18 +567,28 @@ uv run mypy .
 - ✅ Sectional time scraping (DisplaySectionalTime.aspx)
 - ✅ Horse profile scraping (Horse.aspx)
 - ✅ Incremental updates (--date-range, --backfill, --update modes)
-- ✅ Data validation (validators.py with semi-strict mode)
 
 **Phase 3: Production Hardening** ✅ 98% COMPLETED
-- ✅ Comprehensive error handling with retry logic (Phase 3.1) - **NEW!**
-- ✅ Enhanced logging system with dual output (console + file) (Phase 3.2) - **NEW!**
-- ✅ Summary reports with detailed statistics (Phase 3.2) - **NEW!**
-- ✅ Rate limiting for HTTP requests (Phase 3.1) - **NEW!**
-- ✅ Supabase cloud database integration (Phase 3.4) - **NEW!**
-- ❌ Comprehensive pytest test suite (validator tests exist in test_validators.py)
+- ✅ Comprehensive error handling with retry logic
+- ✅ Enhanced logging system with dual output (console + file)
+- ✅ Summary reports with detailed statistics
+- ✅ Rate limiting for HTTP requests
+- ✅ Supabase cloud database integration
+- ✅ Incremental updates and smart scraping
+
+**Phase 4: Usability & Automation** ⏳ 85% IN PROGRESS
+- ✅ Full-featured CLI with all modes
+- ✅ Console scripts (hkjc-scraper, hkjc)
+- ✅ Progress bars for multi-date operations
+- ❌ Scheduling/automation (cron, APScheduler, systemd)
+
+**Phase 5: Quality & Testing** ⏳ 30% IN PROGRESS
+- ✅ Tooling configured: pytest, mypy, ruff, pre-commit
+- ❌ Pytest test suite for scraping functions (TOP PRIORITY)
 
 ### Current Focus
 - Write comprehensive pytest test suite for scraping functions
+- Add scheduling/automation examples
 
 ### Quick Start for Contributors
 ```bash
