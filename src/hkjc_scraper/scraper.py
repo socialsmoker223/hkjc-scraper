@@ -1,5 +1,6 @@
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from decimal import Decimal
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -766,10 +767,10 @@ def scrape_meeting(date_ymd: str):
     # Use HTTPSession context manager for connection pooling
     with HTTPSession() as session:
         race_links = list_race_urls_for_meeting_all_courses(date_ymd, session)
-        all_races = []
         scraped_horse_ids = set()  # Track which horses we've already scraped to avoid duplicates
 
-        for item in race_links:
+        def scrape_single_race(item):
+            """Helper function to scrape a single race (for parallel execution)"""
             local_url = item["url"]
             venue_code = item["racecourse"]  # ST / HV
             logger.info(f"Scraping race page: {local_url}")
@@ -789,23 +790,51 @@ def scrape_meeting(date_ymd: str):
                 logger.info(f"Sectional times not available for race {race_no} on {date_dmy}: {e}")
                 race_data["horse_sectionals"] = []
 
-            # Scrape horse profiles for all horses in this race
-            # Scrape horse profiles for all horses in this race
-            # And merge directly into the horse dict
+            return race_data
+
+        # Scrape all races concurrently (configurable workers)
+        all_races = []
+        with ThreadPoolExecutor(max_workers=config.MAX_RACE_WORKERS) as executor:
+            future_to_race = {executor.submit(scrape_single_race, item): item for item in race_links}
+
+            for future in as_completed(future_to_race):
+                try:
+                    race_data = future.result()
+                    all_races.append(race_data)
+                except Exception as e:
+                    item = future_to_race[future]
+                    logger.error(f"Failed to scrape race {item['url']}: {e}")
+
+        # Sort races by race number to maintain order
+        all_races.sort(key=lambda x: x["race"]["race_no"])
+
+        # Now scrape horse profiles for ALL unique horses across ALL races (batch processing)
+        all_horses_to_scrape = []
+        for race_data in all_races:
             for horse in race_data["horses"]:
                 hkjc_horse_id = horse.get("hkjc_horse_id")
                 if hkjc_horse_id and hkjc_horse_id not in scraped_horse_ids:
-                    logger.debug(f"Scraping horse profile: {hkjc_horse_id} ({horse.get('name_cn', 'N/A')})")
-                    try:
-                        profile = scrape_horse_profile(hkjc_horse_id, session)
-                        # Merge profile fields into horse dict
-                        horse.update(profile)
-                        scraped_horse_ids.add(hkjc_horse_id)
-                    except Exception as e:
-                        logger.warning(f"Failed to scrape profile for {hkjc_horse_id}: {e}")
-            
+                    all_horses_to_scrape.append((horse, hkjc_horse_id))
+                    scraped_horse_ids.add(hkjc_horse_id)  # Mark as scraped to avoid duplicates
 
-            all_races.append(race_data)
+        if all_horses_to_scrape:
+            logger.info(f"Scraping {len(all_horses_to_scrape)} horse profiles concurrently...")
+            # Use ThreadPoolExecutor for concurrent profile scraping (configurable workers)
+            with ThreadPoolExecutor(max_workers=config.MAX_PROFILE_WORKERS) as executor:
+                future_to_horse = {
+                    executor.submit(scrape_horse_profile, hkjc_id, session): (horse, hkjc_id)
+                    for horse, hkjc_id in all_horses_to_scrape
+                }
+
+                # Process results as they complete
+                for future in as_completed(future_to_horse):
+                    horse, hkjc_id = future_to_horse[future]
+                    try:
+                        profile = future.result()
+                        horse.update(profile)
+                        logger.debug(f"Scraped profile: {hkjc_id} ({horse.get('name_cn', 'N/A')})")
+                    except Exception as e:
+                        logger.warning(f"Failed to scrape profile for {hkjc_id}: {e}")
 
         return all_races
 
