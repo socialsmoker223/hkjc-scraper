@@ -3,6 +3,7 @@ HTTP utilities with retry logic and rate limiting
 """
 
 import logging
+import threading
 import time
 from functools import wraps
 from threading import Lock
@@ -124,7 +125,8 @@ def retry_on_network_error(func: Callable) -> Callable:
 
 def rate_limited(delay_seconds: float) -> Callable:
     """
-    Decorator to enforce rate limiting between function calls
+    Decorator to enforce rate limiting between function calls using token bucket algorithm.
+    Thread-safe and allows concurrent execution while respecting rate limits.
 
     Args:
         delay_seconds: Minimum delay between calls in seconds
@@ -134,23 +136,30 @@ def rate_limited(delay_seconds: float) -> Callable:
         def scrape_page(url):
             return requests.get(url)
     """
+    # Per-function lock and last request time
+    func_lock = threading.Lock()
+    last_request = {"time": 0}
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            func_name = func.__name__
-
-            with _rate_limit_lock:
-                last_time = _last_request_time.get(func_name, 0)
+            # Calculate sleep time outside lock to minimize lock duration
+            with func_lock:
                 current_time = time.time()
-                time_since_last = current_time - last_time
+                time_since_last = current_time - last_request["time"]
 
                 if time_since_last < delay_seconds:
                     sleep_time = delay_seconds - time_since_last
-                    logger.debug(f"Rate limiting {func_name}: sleeping {sleep_time:.2f}s")
-                    time.sleep(sleep_time)
+                else:
+                    sleep_time = 0
 
-                _last_request_time[func_name] = time.time()
+                # Update time AFTER calculating sleep (reserve the slot)
+                last_request["time"] = current_time + sleep_time
+
+            # Sleep OUTSIDE the lock to allow other threads to calculate their sleep time
+            if sleep_time > 0:
+                logger.debug(f"Rate limiting {func.__name__}: sleeping {sleep_time:.2f}s")
+                time.sleep(sleep_time)
 
             return func(*args, **kwargs)
 

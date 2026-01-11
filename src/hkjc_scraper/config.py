@@ -55,8 +55,12 @@ class Config:
     # Error handling & retry settings
     RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
     RETRY_BACKOFF_BASE = int(os.getenv("RETRY_BACKOFF_BASE", "2"))
-    RATE_LIMIT_RACE = float(os.getenv("RATE_LIMIT_RACE", "1.0"))
-    RATE_LIMIT_DETAIL = float(os.getenv("RATE_LIMIT_DETAIL", "0.5"))
+    RATE_LIMIT_RACE = float(os.getenv("RATE_LIMIT_RACE", "0.3"))  # Reduced for concurrent execution
+    RATE_LIMIT_DETAIL = float(os.getenv("RATE_LIMIT_DETAIL", "0.2"))  # Reduced for concurrent execution
+
+    # Concurrency settings
+    MAX_RACE_WORKERS = int(os.getenv("MAX_RACE_WORKERS", "4"))  # Concurrent race scraping
+    MAX_PROFILE_WORKERS = int(os.getenv("MAX_PROFILE_WORKERS", "8"))  # Concurrent profile scraping
 
     # Logging settings
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
