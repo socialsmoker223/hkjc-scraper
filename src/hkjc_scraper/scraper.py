@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 from hkjc_scraper.config import config
 from hkjc_scraper.exceptions import ParseError
 from hkjc_scraper.http_utils import HTTPSession, rate_limited, retry_on_network_error
-from hkjc_scraper.validators import validate_meeting, validate_race, validate_runners
 
 BASE = "https://racing.hkjc.com/zh-hk/local/information"
 logger = logging.getLogger(__name__)
@@ -273,19 +272,6 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
     race["localresults_url"] = local_url
     race["sectional_url"] = None  # 由 scrape_meeting 補
 
-    # VALIDATION: Validate meeting and race
-    try:
-        validate_meeting(meeting)
-    except Exception as e:
-        logger.error(f"Invalid meeting data: {e}")
-        raise
-
-    try:
-        validate_race(race)
-    except Exception as e:
-        logger.error(f"Invalid race data: {e}")
-        raise
-
     # Runners table
     result_header = soup.find("td", string=re.compile("名次"))
     result_table = result_header.find_parent("table")
@@ -432,30 +418,13 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
             }
         )
 
-    # VALIDATION: Validate runners before returning
-    runners_validation = validate_runners(runners)
-
-    if runners_validation.invalid_count > 0:
-        logger.warning(
-            f"Skipped {runners_validation.invalid_count}/{runners_validation.total_count} "
-            f"invalid runners in race {race.get('race_no')}"
-        )
-
-    # Use only valid runners
-    runners = runners_validation.valid_records
-
     return {
         "meeting": meeting,
         "race": race,
         "horses": list(horses.values()),
         "jockeys": list(jockeys.values()),
         "trainers": list(trainers.values()),
-        "runners": runners,  # Now validated
-        "validation_summary": {
-            "runners_total": runners_validation.total_count,
-            "runners_valid": runners_validation.valid_count,
-            "runners_invalid": runners_validation.invalid_count,
-        },
+        "runners": runners,
     }
 
 

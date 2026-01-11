@@ -45,10 +45,6 @@ class ScrapingSummary:
     sectionals_saved: int = 0
     profiles_saved: int = 0
 
-    # Validation statistics
-    runners_invalid: int = 0
-    profiles_invalid: int = 0
-
     # Error tracking
     network_errors: int = 0
     parse_errors: int = 0
@@ -93,17 +89,6 @@ class ScrapingSummary:
             f"  Sectionals saved:      {self.sectionals_saved}",
             f"  Profiles saved:        {self.profiles_saved}",
         ]
-
-        # Add validation stats if any invalid records
-        if self.runners_invalid > 0 or self.profiles_invalid > 0:
-            lines.extend(
-                [
-                    "",
-                    "Validation Statistics:",
-                    f"  Invalid runners:       {self.runners_invalid}",
-                    f"  Invalid profiles:      {self.profiles_invalid}",
-                ]
-            )
 
         # Add error breakdown if any errors
         total_errors = self.network_errors + self.parse_errors + self.db_errors + self.other_errors
@@ -308,23 +293,7 @@ def main():
                 summary.sectionals_saved += save_result.get("sectionals_saved", 0)
                 summary.profiles_saved += save_result.get("profiles_saved", 0)
 
-                # Track validation issues
-                for race in meeting_data:
-                    val = race.get("validation_summary", {})
-                    summary.runners_invalid += val.get("runners_invalid", 0)
-                    summary.profiles_invalid += val.get("profiles_invalid", 0)
-
-                # Collect validation stats for message
-                total_invalid = sum(
-                    race.get("validation_summary", {}).get("runners_invalid", 0)
-                    + race.get("validation_summary", {}).get("profiles_invalid", 0)
-                    for race in meeting_data
-                )
-
                 msg = f"Saved {date_ymd}: {save_result['races_saved']} races, {save_result['runners_saved']} runners"
-                if total_invalid > 0:
-                    msg += f" (skipped {total_invalid} invalid records)"
-
                 logger.info(msg)
                 if len(dates_to_scrape) > 1:
                     tqdm.write(msg)
