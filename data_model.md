@@ -42,7 +42,7 @@
 
 **horse**  
 - `id` BIGSERIAL PK  
-- `code` VARCHAR(16) UNIQUE — J344 等  
+- `code` VARCHAR(16) — J344 等  
 - `name_cn` VARCHAR(128)  
 - `name_en` VARCHAR(128) NULL  
 - `hkjc_horse_id` VARCHAR(32) UNIQUE — HK_2023_J344  
@@ -69,7 +69,7 @@
 - `dam_name` VARCHAR(128)  
 - `dam_sire_name` VARCHAR(128)  
 
-關係：1:N → `runner`, `horse_sectional`, 1:N → `horse_profile_history`。[3]
+關係：UNIQUE(`code`, `name_cn`)。1:N → `runner`, `horse_sectional`, 1:N → `horse_profile_history`。[3]
 
 **horse_profile_history**（每次更新一筆快照）  
 - `id` BIGSERIAL PK  
@@ -145,15 +145,65 @@
 
 ***
 
-整體關係總結：  
+***
 
-- `meeting` 1:N `race`  
-- `race` 1:N `runner`  
-- `horse` 1:N `runner`, 1:N `horse_sectional`, 1:(1+N) `horse_profile` / `horse_profile_history`  
-- `jockey`, `trainer` 1:N `runner`  
-- `runner` 1:N `horse_sectional`  
+## HK33 海外賠率（時序資料）
 
-這套模型覆蓋你目前要抓的 LocalResults、DisplaySectionalTime、馬匹資料三類頁面，並已把 horse_profile 歷史拆成獨立表方便追蹤變化。[4][7][2]
+**hkjc_odds**（每場每馬每賠率類型每時刻一筆）
+- `id` BIGSERIAL PK
+- `race_id` BIGINT FK → `race.id`
+- `runner_id` BIGINT FK → `runner.id`
+- `horse_id` BIGINT FK → `horse.id`（denormalized 方便直接查詢馬匹）
+- `bet_type` VARCHAR(16) — 賠率類型：`bet_w`（獨贏）、`bet_p`（位置）、`eat_w`（交易所獨贏）、`eat_p`（交易所位置）
+- `odds_value` DECIMAL(8,2) NULL — 賠率數值
+- `recorded_at` TIMESTAMP — 此賠率記錄時間（香港時區，從 HK33 網站抓取）
+- `source_url` TEXT — HK33 來源網址
+- `scraped_at` TIMESTAMPTZ — 系統抓取時間戳（含時區）
+
+約束與索引：
+- UNIQUE(`runner_id`, `bet_type`, `recorded_at`) — 確保同一 runner、同一賠率類型、同一時刻只有一筆記錄
+- INDEX(`race_id`) — 查詢特定賽事的所有賠率
+- INDEX(`runner_id`) — 查詢特定 runner 的賠率歷史
+- INDEX(`horse_id`) — 查詢特定馬匹的賠率歷史
+- INDEX(`race_id`, `bet_type`) — 查詢特定賽事的特定賠率類型
+- INDEX(`race_id`, `recorded_at`) — 時序分析（按時間排序）
+- CHECK(`bet_type` IN ('bet_w', 'bet_p', 'eat_w', 'eat_p')) — 驗證賠率類型
+- CHECK(`odds_value` IS NULL OR `odds_value` > 0) — 驗證賠率為正數
+
+關係：N:1 → `race`, `runner`, `horse`。此表儲存 HK33.com 的時序賠率資料，每場賽事每匹馬每個賠率類型會有多個時間點的賠率記錄，方便分析賠率走勢（steamers/drifters）。[8]
+
+**offshore_market**（其他海外市場賠率）
+- `id` BIGSERIAL PK
+- `race_id` BIGINT FK → `race.id`
+- `runner_id` BIGINT FK → `runner.id`
+- `horse_id` BIGINT FK → `horse.id`
+- `market_type` VARCHAR(16)
+- `price` DECIMAL(8,2) NULL
+- `recorded_at` TIMESTAMP
+- `source_url` TEXT
+- `scraped_at` TIMESTAMPTZ
+
+約束與索引：
+- UNIQUE(`runner_id`, `market_type`, `recorded_at`)
+- INDEX(`race_id`)
+- INDEX(`runner_id`)
+- INDEX(`horse_id`)
+- INDEX(`race_id`, `market_type`)
+- INDEX(`race_id`, `recorded_at`)
+
+關係：N:1 → `race`, `runner`, `horse`。
+
+***
+
+整體關係總結：
+
+- `meeting` 1:N `race`
+- `race` 1:N `runner`, 1:N `hkjc_odds`, 1:N `offshore_market`
+- `horse` 1:N `runner`, 1:N `horse_sectional`, 1:(1+N) `horse_profile_history`, 1:N `hkjc_odds`, 1:N `offshore_market`
+- `jockey`, `trainer` 1:N `runner`
+- `runner` 1:N `horse_sectional`, 1:N `hkjc_odds`, 1:N `offshore_market`
+
+這套模型覆蓋你目前要抓的 LocalResults、DisplaySectionalTime、馬匹資料三類頁面，並已把 horse_profile 歷史拆成獨立表方便追蹤變化。新增的 `hkjc_odds` 表儲存 HK33.com 的時序賠率資料，支援多種賠率類型的完整歷史追蹤。[4][7][2]
 
 [1](https://racing.hkjc.com/racing/information/chinese/Racing/DisplaySectionalTime.aspx?RaceDate=20/12/2025&RaceNo=7)
 [2](https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx)
@@ -162,3 +212,4 @@
 [5](https://racing.hkjc.com/racing/information/English/Horse/LatestOnHorse.aspx?View=Horses%2Fclas%2F)
 [6](https://racing.hkjc.com/racing/information/english/Horse/LatestOnHorse.aspx?View=Horses%2Fcsum)
 [7](https://racing.hkjc.com/racing/information/English/Racing/DisplaySectionalTime.aspx?RaceDate=29%2F12%2F2019&RaceNo=7)
+[8](https://horse.hk33.com/analysis/offshore-market-trends-history)

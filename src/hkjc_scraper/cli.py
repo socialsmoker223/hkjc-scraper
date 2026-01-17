@@ -10,15 +10,20 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 import requests
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from tqdm import tqdm
 
 from hkjc_scraper.config import config
 from hkjc_scraper.database import check_connection, get_db, init_db
 from hkjc_scraper.exceptions import ParseError
+from hkjc_scraper.hk33_scraper import scrape_hk33_race_all_types
+from hkjc_scraper.http_utils import HTTPSession
 from hkjc_scraper.persistence import (
     check_meeting_exists,
     get_max_meeting_date,
+    get_runner_map,
+    save_hk33_data,
     save_meeting_data,
 )
 from hkjc_scraper.scraper import scrape_meeting
@@ -44,6 +49,11 @@ class ScrapingSummary:
     runners_saved: int = 0
     sectionals_saved: int = 0
     profiles_saved: int = 0
+
+    # HK33 statistics
+    hk33_jchk_saved: int = 0
+    hk33_offshore_saved: int = 0
+    hk33_errors: int = 0
 
     # Error tracking
     network_errors: int = 0
@@ -90,6 +100,18 @@ class ScrapingSummary:
             f"  Profiles saved:        {self.profiles_saved}",
         ]
 
+        # Add HK33 statistics if any data was scraped
+        if self.hk33_jchk_saved > 0 or self.hk33_offshore_saved > 0 or self.hk33_errors > 0:
+            lines.extend(
+                [
+                    "",
+                    "HK33 Statistics:",
+                    f"  JCHK odds saved:       {self.hk33_jchk_saved}",
+                    f"  Offshore market saved: {self.hk33_offshore_saved}",
+                    f"  HK33 errors:           {self.hk33_errors}",
+                ]
+            )
+
         # Add error breakdown if any errors
         total_errors = self.network_errors + self.parse_errors + self.db_errors + self.other_errors
         if total_errors > 0:
@@ -107,6 +129,84 @@ class ScrapingSummary:
 
         lines.append("=" * 60)
         return "\n".join(lines)
+
+
+def scrape_and_save_hk33_meeting(
+    db, date_obj, meeting_data, session, scrape_odds: bool, scrape_market: bool
+) -> dict:
+    """
+    Scrape and save HK33 data for all races in a meeting.
+
+    NOTE: Currently HTTP requests to HK33 return 403 Forbidden errors.
+    Browser automation fallback needs to be implemented.
+    See HK33_BROWSER_SCRAPING.md for details.
+
+    Args:
+        db: Database session
+        date_obj: Date object of the meeting
+        meeting_data: List of race data dicts from HKJC scraper
+        session: HTTP session for making requests
+        scrape_odds: Whether to scrape JCHK odds
+        scrape_market: Whether to scrape offshore market
+
+    Returns:
+        Dict with counts: {'jchk_saved': int, 'offshore_saved': int}
+    """
+    from hkjc_scraper.models import Race, Meeting
+
+    date_ymd = date_obj.strftime("%Y/%m/%d")
+    jchk_total = 0
+    offshore_total = 0
+
+    for race_data_dict in meeting_data:
+        race_no = race_data_dict['race']['race_no']
+
+        try:
+            # Get runner mapping from DB
+            runner_map = get_runner_map(db, date_obj, race_no)
+            if not runner_map:
+                logger.warning(f"No runners found for race {race_no} on {date_ymd}, skipping HK33")
+                continue
+
+            # Get race_id from DB
+            stmt = (
+                select(Race.id)
+                .join(Meeting, Race.meeting_id == Meeting.id)
+                .where(Meeting.date == date_obj, Race.race_no == race_no)
+            )
+            race_id = db.execute(stmt).scalar_one_or_none()
+
+            if not race_id:
+                logger.warning(f"Race {race_no} not found in DB for {date_ymd}, skipping HK33")
+                continue
+
+            # Scrape HK33 data (currently fails with 403)
+            hk33_data = scrape_hk33_race_all_types(
+                session, date_ymd, race_no, scrape_jchk=scrape_odds, scrape_market=scrape_market
+            )
+
+            # Save to database
+            result = save_hk33_data(
+                db,
+                race_id,
+                date_obj,
+                runner_map,
+                hk33_data['jchk_data'],
+                hk33_data['market_data'],
+            )
+
+            jchk_total += result['jchk_saved']
+            offshore_total += result['offshore_saved']
+
+            # Commit after each race to prevent timeout
+            db.commit()
+
+        except Exception as e:
+            logger.error(f"Failed to scrape/save HK33 data for race {race_no}: {e}")
+            db.rollback()
+            continue
+
+    return {'jchk_saved': jchk_total, 'offshore_saved': offshore_total}
 
 
 def main():
@@ -152,6 +252,26 @@ def main():
         action="store_true",
         help="Force re-scrape even if data exists in database",
     )
+    parser.add_argument(
+        "--scrape-hk33",
+        action="store_true",
+        help="Scrape HK33 odds data (both JCHK odds and offshore market)",
+    )
+    parser.add_argument(
+        "--scrape-hk33-odds",
+        action="store_true",
+        help="Scrape only JCHK Win/Place odds from HK33",
+    )
+    parser.add_argument(
+        "--scrape-hk33-market",
+        action="store_true",
+        help="Scrape only offshore market data from HK33",
+    )
+    parser.add_argument(
+        "--login-hk33",
+        action="store_true",
+        help="Run automated login to refresh HK33 cookies",
+    )
 
     args = parser.parse_args()
 
@@ -174,6 +294,18 @@ def main():
 
         migrate_db(command="upgrade", revision="head")
         sys.exit(0)
+
+    # Run HK33 Login if requested
+    if args.login_hk33:
+        logger.info("Starting HK33 automated login...")
+        from hkjc_scraper.hk33_login import perform_hk33_login
+        
+        if perform_hk33_login():
+            logger.info("Login process completed successfully.")
+            sys.exit(0)
+        else:
+            logger.error("Login process failed.")
+            sys.exit(1)
 
     # Determine dates to scrape
     dates_to_scrape = []
@@ -297,6 +429,31 @@ def main():
                 logger.info(msg)
                 if len(dates_to_scrape) > 1:
                     tqdm.write(msg)
+
+                # Scrape HK33 data if requested
+                if args.scrape_hk33 or args.scrape_hk33_odds or args.scrape_hk33_market:
+                    try:
+                        scrape_odds = args.scrape_hk33 or args.scrape_hk33_odds
+                        scrape_market = args.scrape_hk33 or args.scrape_hk33_market
+
+                        with HTTPSession() as session, get_db() as db:
+                            hk33_result = scrape_and_save_hk33_meeting(
+                                db, date_obj, meeting_data, session, scrape_odds, scrape_market
+                            )
+
+                            summary.hk33_jchk_saved += hk33_result['jchk_saved']
+                            summary.hk33_offshore_saved += hk33_result['offshore_saved']
+
+                            hk33_msg = f"HK33 {date_ymd}: {hk33_result['jchk_saved']} JCHK odds, {hk33_result['offshore_saved']} offshore records"
+                            logger.info(hk33_msg)
+                            if len(dates_to_scrape) > 1:
+                                tqdm.write(hk33_msg)
+
+                    except Exception as e:
+                        summary.hk33_errors += 1
+                        logger.error(f"Failed to scrape HK33 data for {date_ymd}: {e}")
+                        if len(dates_to_scrape) > 1:
+                            tqdm.write(f"HK33 error for {date_ymd}")
 
         except requests.RequestException as e:
             summary.network_errors += 1

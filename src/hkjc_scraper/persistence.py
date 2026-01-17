@@ -15,11 +15,12 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from hkjc_scraper.models import (
     Horse,
-    Horse,
     HorseHistory,
     HorseSectional,
+    HkjcOdds,
     Jockey,
     Meeting,
+    OffshoreMarket,
     Race,
     Runner,
     Trainer,
@@ -362,6 +363,7 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
             
             # If we have profile data (e.g. origin is set), create a history record
             # We check a few key profile fields to determine if we should save history
+            # TODO: update insert horse history rule, only insert when the horse data has changed. 
             if horse_data.get("origin") or horse_data.get("current_rating"):
                 # Use horse_data directly as it now contains merged profile info
                 insert_horse_history(db, horse.id, horse_data)
@@ -487,3 +489,186 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
             raise  # Re-raise to let caller handle
 
     return summary
+
+
+# ============================================================================
+# HK33 Odds and Offshore Market persistence
+# ============================================================================
+
+
+def upsert_hkjc_odds(db: Session, odds_data: dict[str, Any]) -> HkjcOdds:
+    """
+    插入或更新 JCHK 賠率 (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update JCHK odds using PostgreSQL native ON CONFLICT
+    (unique by runner_id + bet_type + recorded_at)
+
+    Args:
+        db: Database session
+        odds_data: Dict with keys: race_id, runner_id, horse_id, bet_type,
+                   odds_value, recorded_at, source_url
+
+    Returns:
+        HkjcOdds object
+    """
+    stmt = insert(HkjcOdds).values(odds_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['runner_id', 'bet_type', 'recorded_at'],
+        set_={
+            'odds_value': stmt.excluded.odds_value,
+            'source_url': stmt.excluded.source_url,
+            'scraped_at': func.now()
+        }
+    ).returning(HkjcOdds)
+
+    result = db.execute(stmt)
+    return result.scalar_one()
+
+
+def upsert_offshore_market(db: Session, market_data: dict[str, Any]) -> OffshoreMarket:
+    """
+    插入或更新海外市場資料 (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update offshore market data using PostgreSQL native ON CONFLICT
+    (unique by runner_id + market_type + recorded_at)
+
+    Args:
+        db: Database session
+        market_data: Dict with keys: race_id, runner_id, horse_id, market_type,
+                     price, recorded_at, source_url
+
+    Returns:
+        OffshoreMarket object
+    """
+    stmt = insert(OffshoreMarket).values(market_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['runner_id', 'market_type', 'recorded_at'],
+        set_={
+            'price': stmt.excluded.price,
+            'source_url': stmt.excluded.source_url,
+            'scraped_at': func.now()
+        }
+    ).returning(OffshoreMarket)
+
+    result = db.execute(stmt)
+    return result.scalar_one()
+
+
+def get_runner_map(db: Session, race_date: date, race_no: int) -> dict[int, tuple[int, int]]:
+    """
+    查詢資料庫以對應馬號到 runner_id 和 horse_id
+    Query database to map horse_no → (runner_id, horse_id) for a race
+
+    Args:
+        db: Database session
+        race_date: Date of the race
+        race_no: Race number
+
+    Returns:
+        Dict mapping horse_no to (runner_id, horse_id)
+        Example: {1: (123, 456), 2: (124, 457), ...}
+    """
+    stmt = (
+        select(Runner.id, Runner.horse_id, Runner.horse_no)
+        .join(Race, Runner.race_id == Race.id)
+        .join(Meeting, Race.meeting_id == Meeting.id)
+        .where(Meeting.date == race_date, Race.race_no == race_no)
+    )
+
+    results = db.execute(stmt).all()
+    return {row.horse_no: (row.id, row.horse_id) for row in results if row.horse_no is not None}
+
+
+@db_retry
+def save_hk33_data(
+    db: Session,
+    race_id: int,
+    race_date: date,
+    runner_map: dict[int, tuple[int, int]],
+    jchk_data: list[dict],
+    offshore_data: list[dict],
+) -> dict[str, int]:
+    """
+    儲存 HK33 賠率和海外市場資料
+    Save HK33 JCHK odds and offshore market data for a race
+
+    Args:
+        db: Database session
+        race_id: ID of the race
+        race_date: Date of the race (for timestamp conversion)
+        runner_map: Dict mapping horse_no → (runner_id, horse_id)
+        jchk_data: List of JCHK odds records from scraper
+        offshore_data: List of offshore market records from scraper
+
+    Returns:
+        Dict with counts: {'jchk_saved': int, 'offshore_saved': int}
+    """
+    from hkjc_scraper.hk33_scraper import convert_timestamp_to_datetime
+
+    jchk_saved = 0
+    offshore_saved = 0
+
+    # Process JCHK odds
+    for record in jchk_data:
+        horse_no = record['horse_no']
+
+        # Skip if horse not found in runner map
+        if horse_no not in runner_map:
+            logger.warning(f"Horse #{horse_no} not found in runner map, skipping odds record")
+            continue
+
+        runner_id, horse_id = runner_map[horse_no]
+
+        # Convert timestamp to datetime
+        recorded_at = convert_timestamp_to_datetime(race_date, record['timestamp_str'])
+
+        # Prepare data for UPSERT
+        odds_data = {
+            'race_id': race_id,
+            'runner_id': runner_id,
+            'horse_id': horse_id,
+            'bet_type': record['bet_type'],
+            'odds_value': record['odds_value'],
+            'recorded_at': recorded_at,
+            'source_url': record.get('source_url'),
+        }
+
+        try:
+            upsert_hkjc_odds(db, odds_data)
+            jchk_saved += 1
+        except Exception as e:
+            logger.error(f"Failed to save JCHK odds for horse #{horse_no}: {e}")
+            continue
+
+    # Process offshore market data
+    for record in offshore_data:
+        horse_no = record['horse_no']
+
+        # Skip if horse not found in runner map
+        if horse_no not in runner_map:
+            logger.warning(f"Horse #{horse_no} not found in runner map, skipping market record")
+            continue
+
+        runner_id, horse_id = runner_map[horse_no]
+
+        # Convert timestamp to datetime
+        recorded_at = convert_timestamp_to_datetime(race_date, record['timestamp_str'])
+
+        # Prepare data for UPSERT
+        market_data = {
+            'race_id': race_id,
+            'runner_id': runner_id,
+            'horse_id': horse_id,
+            'market_type': record['market_type'],
+            'price': record['odds_value'],  # Note: 'odds_value' field contains price
+            'recorded_at': recorded_at,
+            'source_url': record.get('source_url'),
+        }
+
+        try:
+            upsert_offshore_market(db, market_data)
+            offshore_saved += 1
+        except Exception as e:
+            logger.error(f"Failed to save offshore market data for horse #{horse_no}: {e}")
+            continue
+
+    logger.info(f"Saved {jchk_saved} JCHK odds and {offshore_saved} offshore market records")
+    return {'jchk_saved': jchk_saved, 'offshore_saved': offshore_saved}

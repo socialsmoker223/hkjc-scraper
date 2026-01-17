@@ -66,6 +66,13 @@ class Config:
     MAX_RACE_WORKERS = int(os.getenv("MAX_RACE_WORKERS", "4"))  # Concurrent race scraping
     MAX_PROFILE_WORKERS = int(os.getenv("MAX_PROFILE_WORKERS", "8"))  # Concurrent profile scraping
 
+    # HK33 scraping settings
+    HK33_BASE_URL = "https://horse.hk33.com/analysis"
+    RATE_LIMIT_HK33 = float(os.getenv("RATE_LIMIT_HK33", "0.5"))
+    HK33_REQUEST_TIMEOUT = int(os.getenv("HK33_REQUEST_TIMEOUT", "30"))
+    HK33_EMAIL = os.getenv("HK33_EMAIL", "pccafehk@gmail.com")
+    HK33_PASSWORD = os.getenv("HK33_PASSWORD", "Aabb1122")
+
     # Logging settings
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE = os.getenv("LOG_FILE", "hkjc_scraper.log")

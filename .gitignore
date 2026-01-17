@@ -79,3 +79,7 @@ docker-compose.override.yml
 
 # Agent
 .agent
+
+# Scraper Cookies
+.hk33_cookies
+cookies.pkl
