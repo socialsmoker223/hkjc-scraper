@@ -1,23 +1,20 @@
-import sys
 from logging.config import fileConfig
-from pathlib import Path
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
 
 from alembic import context
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from hkjc_scraper.config import config as app_config
+# Import our models and config
 from hkjc_scraper.models import Base
+from hkjc_scraper.config import Config
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Set sqlalchemy.url from app config (respects .env)
-config.set_main_option("sqlalchemy.url", app_config.get_db_url())
+# Set the database URL from our config
+config.set_main_option("sqlalchemy.url", Config.get_db_url())
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -26,8 +23,6 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
@@ -74,7 +69,9 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection, target_metadata=target_metadata
+        )
 
         with context.begin_transaction():
             context.run_migrations()

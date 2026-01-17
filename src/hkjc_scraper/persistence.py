@@ -8,8 +8,10 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from hkjc_scraper.models import (
     Horse,
@@ -26,14 +28,28 @@ from hkjc_scraper.models import (
 logger = logging.getLogger(__name__)
 
 # ============================================================================
+# Database retry decorator for timeout and connection errors
+# ============================================================================
+
+# Retry decorator for database operations prone to timeouts
+db_retry = retry(
+    retry=retry_if_exception_type(OperationalError),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Database operation failed (attempt {retry_state.attempt_number}), retrying..."
+    )
+)
+
+# ============================================================================
 # Meeting and Race persistence
 # ============================================================================
 
 
 def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
     """
-    插入或更新 meeting
-    Insert or update meeting (unique by date + venue_code)
+    插入或更新 meeting (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update meeting using PostgreSQL native ON CONFLICT (unique by date + venue_code)
 
     Args:
         db: Database session
@@ -52,28 +68,22 @@ def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
 
     # Remove fields that aren't in the Meeting model
     clean_data.pop("date_dmy", None)
-    # Note: 'season' is now a valid field in Meeting model, so we don't pop it
 
-    stmt = select(Meeting).where(Meeting.date == clean_data["date"], Meeting.venue_code == clean_data["venue_code"])
-    meeting = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    stmt = insert(Meeting).values(clean_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['date', 'venue_code'],
+        set_={k: v for k, v in clean_data.items() if k not in ['date', 'venue_code']}
+    ).returning(Meeting)
 
-    if meeting:
-        # Update existing
-        for key, value in clean_data.items():
-            setattr(meeting, key, value)
-    else:
-        # Insert new
-        meeting = Meeting(**clean_data)
-        db.add(meeting)
-
-    db.flush()  # Get the ID without committing
-    return meeting
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 def upsert_race(db: Session, race_data: dict[str, Any]) -> Race:
     """
-    插入或更新 race
-    Insert or update race (unique by meeting_id + race_no)
+    插入或更新 race (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update race using PostgreSQL native ON CONFLICT (unique by meeting_id + race_no)
 
     Args:
         db: Database session
@@ -82,20 +92,15 @@ def upsert_race(db: Session, race_data: dict[str, Any]) -> Race:
     Returns:
         Race object
     """
-    stmt = select(Race).where(Race.meeting_id == race_data["meeting_id"], Race.race_no == race_data["race_no"])
-    race = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    stmt = insert(Race).values(race_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['meeting_id', 'race_no'],
+        set_={k: v for k, v in race_data.items() if k not in ['meeting_id', 'race_no']}
+    ).returning(Race)
 
-    if race:
-        # Update existing
-        for key, value in race_data.items():
-            setattr(race, key, value)
-    else:
-        # Insert new
-        race = Race(**race_data)
-        db.add(race)
-
-    db.flush()
-    return race
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 def check_meeting_exists(db: Session, race_date: date) -> bool:
@@ -121,8 +126,8 @@ def get_max_meeting_date(db: Session) -> Optional[date]:
 
 def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
     """
-    插入或更新 horse
-    Insert or update horse (unique by code)
+    插入或更新 horse (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update horse using PostgreSQL native ON CONFLICT (unique by hkjc_horse_id)
 
     Args:
         db: Database session
@@ -131,80 +136,62 @@ def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
     Returns:
         Horse object
     """
-    stmt = select(Horse).where(
-        Horse.code == horse_data["code"],
-        Horse.name_cn == horse_data.get("name_cn"),
-    )
-    horse = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    # Use hkjc_horse_id as unique key (always present, handles NULL name_en)
+    stmt = insert(Horse).values(horse_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['hkjc_horse_id'],
+        set_={k: v for k, v in horse_data.items() if k != 'hkjc_horse_id'}
+    ).returning(Horse)
 
-    if horse:
-        # Update existing
-        for key, value in horse_data.items():
-            if key not in ("code", "name_cn"):  # Don't update the unique key parts
-                setattr(horse, key, value)
-    else:
-        # Insert new
-        horse = Horse(**horse_data)
-        db.add(horse)
-
-    db.flush()
-    return horse
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 def upsert_jockey(db: Session, jockey_data: dict[str, Any]) -> Jockey:
     """
-    插入或更新 jockey
-    Insert or update jockey (unique by name_cn)
+    插入或更新 jockey (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update jockey using PostgreSQL native ON CONFLICT (unique by code)
 
     Args:
         db: Database session
-        jockey_data: Dictionary with keys: name_cn, code (optional), name_en
+        jockey_data: Dictionary with keys: code, name_cn, name_en
 
     Returns:
         Jockey object
     """
-    stmt = select(Jockey).where(Jockey.name_cn == jockey_data["name_cn"])
-    jockey = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    stmt = insert(Jockey).values(jockey_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['name_cn'],
+        set_={k: v for k, v in jockey_data.items() if k != 'name_cn'}
+    ).returning(Jockey)
 
-    if jockey:
-        # Update existing
-        for key, value in jockey_data.items():
-            setattr(jockey, key, value)
-    else:
-        # Insert new
-        jockey = Jockey(**jockey_data)
-        db.add(jockey)
-
-    db.flush()
-    return jockey
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 def upsert_trainer(db: Session, trainer_data: dict[str, Any]) -> Trainer:
     """
-    插入或更新 trainer
-    Insert or update trainer (unique by name_cn)
+    插入或更新 trainer (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update trainer using PostgreSQL native ON CONFLICT (unique by code)
 
     Args:
         db: Database session
-        trainer_data: Dictionary with keys: name_cn, code (optional), name_en
+        trainer_data: Dictionary with keys: code, name_cn, name_en
 
     Returns:
         Trainer object
     """
-    stmt = select(Trainer).where(Trainer.name_cn == trainer_data["name_cn"])
-    trainer = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    stmt = insert(Trainer).values(trainer_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['name_cn'],
+        set_={k: v for k, v in trainer_data.items() if k != 'name_cn'}
+    ).returning(Trainer)
 
-    if trainer:
-        # Update existing
-        for key, value in trainer_data.items():
-            setattr(trainer, key, value)
-    else:
-        # Insert new
-        trainer = Trainer(**trainer_data)
-        db.add(trainer)
-
-    db.flush()
-    return trainer
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 # ============================================================================
@@ -271,8 +258,8 @@ def insert_horse_history(
 
 def upsert_runner(db: Session, runner_data: dict[str, Any]) -> Runner:
     """
-    插入或更新 runner
-    Insert or update runner (unique by race_id + horse_id)
+    插入或更新 runner (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update runner using PostgreSQL native ON CONFLICT (unique by race_id + horse_id)
 
     Args:
         db: Database session
@@ -288,26 +275,21 @@ def upsert_runner(db: Session, runner_data: dict[str, Any]) -> Runner:
     clean_data.pop("trainer_name_cn", None)
     clean_data.pop("hkjc_horse_id", None)
 
-    stmt = select(Runner).where(Runner.race_id == clean_data["race_id"], Runner.horse_id == clean_data["horse_id"])
-    runner = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    stmt = insert(Runner).values(clean_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['race_id', 'horse_id'],
+        set_={k: v for k, v in clean_data.items() if k not in ['race_id', 'horse_id']}
+    ).returning(Runner)
 
-    if runner:
-        # Update existing
-        for key, value in clean_data.items():
-            setattr(runner, key, value)
-    else:
-        # Insert new
-        runner = Runner(**clean_data)
-        db.add(runner)
-
-    db.flush()
-    return runner
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 def upsert_horse_sectional(db: Session, sectional_data: dict[str, Any]) -> HorseSectional:
     """
-    插入或更新 horse_sectional
-    Insert or update horse_sectional (unique by runner_id + section_no)
+    插入或更新 horse_sectional (使用 PostgreSQL ON CONFLICT UPSERT)
+    Insert or update horse_sectional using PostgreSQL native ON CONFLICT (unique by runner_id + section_no)
 
     Args:
         db: Database session
@@ -322,22 +304,15 @@ def upsert_horse_sectional(db: Session, sectional_data: dict[str, Any]) -> Horse
     clean_data.pop("horse_no", None)
     clean_data.pop("hkjc_horse_id", None)
 
-    stmt = select(HorseSectional).where(
-        HorseSectional.runner_id == clean_data["runner_id"], HorseSectional.section_no == clean_data["section_no"]
-    )
-    sectional = db.execute(stmt).scalar_one_or_none()
+    # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
+    stmt = insert(HorseSectional).values(clean_data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['runner_id', 'section_no'],
+        set_={k: v for k, v in clean_data.items() if k not in ['runner_id', 'section_no']}
+    ).returning(HorseSectional)
 
-    if sectional:
-        # Update existing
-        for key, value in clean_data.items():
-            setattr(sectional, key, value)
-    else:
-        # Insert new
-        sectional = HorseSectional(**clean_data)
-        db.add(sectional)
-
-    db.flush()
-    return sectional
+    result = db.execute(stmt)
+    return result.scalar_one()
 
 
 # ============================================================================
@@ -463,7 +438,7 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
         logger.warning(f"Duplicate data detected (race already exists): {e}")
         db.rollback()
         return {"race_id": None, "runner_count": 0, "sectional_count": 0, "profile_count": 0}
-    except SQLAlchemyError as e:
+    except (OperationalError, SQLAlchemyError) as e:
         logger.error(f"Database error saving race: {e}")
         db.rollback()
         raise
@@ -473,6 +448,9 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
     """
     儲存整個賽日的多場賽事資料
     Save all races for a meeting
+
+    Note: Commits after EACH race to prevent timeout with large transactions.
+    This is critical for Supabase to avoid "could not receive data from server" errors.
 
     Args:
         db: Database session
@@ -489,12 +467,23 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
     }
 
     for race_data in meeting_data:
-        result = save_race_data(db, race_data)
-        summary["races_saved"] += 1
-        summary["runners_saved"] += result["runner_count"]
-        summary["sectionals_saved"] += result["sectional_count"]
-        summary["profiles_saved"] += result.get("profile_count", 0)
+        try:
+            result = save_race_data(db, race_data)
 
-    db.commit()
+            # CRITICAL: Commit after EACH race to prevent timeout with large transactions
+            # This reduces transaction size from thousands of rows to ~100-200 rows per commit
+            db.commit()
+
+            # Update summary after successful commit
+            summary["races_saved"] += 1
+            summary["runners_saved"] += result["runner_count"]
+            summary["sectionals_saved"] += result["sectional_count"]
+            summary["profiles_saved"] += result.get("profile_count", 0)
+
+        except Exception as e:
+            # Rollback this race only, continue with next race
+            db.rollback()
+            logger.error(f"Failed to save race (rolling back): {e}")
+            raise  # Re-raise to let caller handle
 
     return summary

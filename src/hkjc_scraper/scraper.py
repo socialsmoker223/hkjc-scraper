@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 def list_race_urls_for_meeting_all_courses(date_ymd: str, session: HTTPSession):
     """
     給一個賽日 (YYYY/MM/DD)，從 ResultsAll 抓該日所有場地、所有場次的 LocalResults 連結，
-    並回傳其 Racecourse (ST/HV) 與 RaceNo。
+    並回傳其 Racecourse (ST/HV/CH) 與 RaceNo。
 
     Args:
         date_ymd: Race date in YYYY/MM/DD format
@@ -48,7 +48,7 @@ def list_race_urls_for_meeting_all_courses(date_ymd: str, session: HTTPSession):
 
         q = parse_qs(urlparse(full).query)
         racecourse = q.get("Racecourse", [None])[0]
-        if racecourse != "HV" and racecourse != "ST":
+        if racecourse != "HV" and racecourse != "ST" and racecourse != "CH":
             continue
         raceno = q.get("RaceNo", [None])[0]
         race_no = int(raceno) if raceno and raceno.isdigit() else None
