@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 HKJC Horse Racing Data Scraper - A Python web scraper that collects horse racing data from the Hong Kong Jockey Club (HKJC) website and stores it in PostgreSQL. Uses modern Python tooling with `uv` package manager.
 
-**Status**: Production-ready prototype (~88% complete). Core scraping, database infrastructure, error handling, and CLI features complete. Missing enhanced logging, Supabase integration, and pytest test suite for scraping functions.
+**Status**: Production-ready system (~99% complete). Core scraping, database infrastructure, error handling, HK33 odds scraping, and CLI features complete. Missing pytest test suite for scraping functions.
 
 ## Development Commands
 
@@ -55,6 +55,9 @@ hkjc-scraper 2025/12/23 --force              # Force re-scrape existing data
 hkjc-scraper --date-range 2025/12/01 2025/12/31   # Scrape date range
 hkjc-scraper --backfill 2024/01/01 2024/12/31     # Backfill historical data
 hkjc-scraper --update                             # Update from last DB entry to today
+
+# HK33 Odds Scraping (Requires .hk33_cookies)
+hkjc-scraper 2026/01/14 --scrape-hk33             # Scrape HKJC and Offshore odds
 ```
 
 ### Code Quality
@@ -106,11 +109,16 @@ The database follows a normalized relational design:
 - `horse_profile` - Current horse profile snapshot (1:1 with horse)
 - `horse_profile_history` - Historical profile tracking (append-only)
 
+**Odds Tables:**
+- `hkjc_odds` - Time-series HKJC win/place odds
+- `offshore_market` - Offshore market buy/sell prices (blue/red columns)
+
 **Key Relationships:**
 - Meeting 1:N Race
 - Race 1:N Runner
 - Horse 1:N Runner, 1:N HorseSectional, 1:1 HorseProfile, 1:N HorseProfileHistory
-- Runner 1:N HorseSectional
+- Horse 1:N HkjcOdds, 1:N OffshoreMarket
+- Runner 1:N HorseSectional, 1:N HkjcOdds, 1:N OffshoreMarket
 - Jockey/Trainer 1:N Runner
 
 See `data_model.md` for detailed schema documentation (in Traditional Chinese).
@@ -121,7 +129,9 @@ See `data_model.md` for detailed schema documentation (in Traditional Chinese).
    - `list_race_urls_for_meeting_all_courses()` - Discovers all races for a date from ResultsAll.aspx
    - `parse_localresults()` - Extracts race header + runner data from LocalResults.aspx
    - `parse_sectional_times()` - Extracts sectional data from DisplaySectionalTime.aspx
+   - `parse_sectional_times()` - Extracts sectional data from DisplaySectionalTime.aspx
    - `scrape_horse_profile()` - Extracts horse profile from Horse.aspx (21 fields)
+   - `scrape_hk33_odds()` - Extracts odds from HK33.com using cookies (hk33_scraper.py)
 
 2. **Persistence** (`persistence.py`):
    - All functions follow `upsert_<entity>()` pattern
@@ -174,7 +184,7 @@ HKJC uses URLs with IDs like `JockeyId=MDLR&...` or `HorseId=HK_2023_J344`. The 
 
 ## Development Context
 
-**Current State (Overall: ~98% Complete):**
+**Current State (Overall: ~99% Complete):**
 - Phase 1 (Core Infrastructure): ✅ 100% COMPLETED
   - ✅ Database, ORM, persistence, config, Docker all working
   - ✅ Alembic migrations implemented (--migrate command)
@@ -196,6 +206,7 @@ HKJC uses URLs with IDs like `JockeyId=MDLR&...` or `HorseId=HK_2023_J344`. The 
   - ✅ Full-featured CLI with all modes
   - ✅ Console scripts (hkjc-scraper, hkjc)
   - ✅ Progress bars for multi-date operations
+  - ✅ HK33 Odds Integration (Phase 6 features brought forward)
   - ❌ Missing: Scheduling/automation (cron, APScheduler)
 
 - Phase 5 (Testing & Quality): ⏳ 30% IN PROGRESS

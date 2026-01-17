@@ -5,6 +5,7 @@ A Python web scraper that collects horse racing data from the Hong Kong Jockey C
 ## Features
 
 - Scrapes race results, runner performance, and sectional times
+- **Scrapes real-time odds from HK33.com (Win/Place, Offshore markets)**
 - Stores data in normalized PostgreSQL database with 9 tables
 - Automatic UPSERT operations to handle duplicate data
 - **Database options: Local PostgreSQL (Docker) or Supabase (Cloud)**
@@ -432,6 +433,10 @@ The database consists of 9 tables:
 - **horse_profile** - Current horse profile snapshot
 - **horse_profile_history** - Historical profile tracking
 
+### Odds Tables
+- **hkjc_odds** - Time-series HKJC odds data
+- **offshore_market** - Offshore market data (Bet/Eat prices)
+
 See `data_model.md` for detailed schema documentation.
 
 ## What Gets Scraped
@@ -457,6 +462,12 @@ Use `--scrape-profiles` flag to enable:
 - Historical profile tracking in `horse_profile_history` table
 
 See `HORSE_PROFILE_IMPLEMENTATION.md` for implementation details.
+
+### From HK33.com (Odds) ✅ **Implemented**
+Use `--scrape-hk33` flag to enable:
+- HKJC Win/Place odds (time-series)
+- Offshore Market odds (Bet/Eat prices) for arbitrage analysis
+- Requires cookie authentication (see `HK33_BROWSER_SCRAPING.md`)
 
 ## Development
 
