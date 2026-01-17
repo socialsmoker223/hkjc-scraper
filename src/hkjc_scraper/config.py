@@ -27,6 +27,10 @@ class Config:
     # Supabase settings
     SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 
+    # Database timeout settings (for Supabase)
+    DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "30"))  # Connection timeout in seconds
+    DB_STATEMENT_TIMEOUT = int(os.getenv("DB_STATEMENT_TIMEOUT", "60000"))  # Query timeout in milliseconds
+
     @classmethod
     def get_db_url(cls) -> str:
         """

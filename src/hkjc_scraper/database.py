@@ -24,7 +24,11 @@ if config.DATABASE_TYPE == "supabase":
         "max_overflow": 7,  # Total 10 connections max
         "pool_pre_ping": True,
         "pool_recycle": 300,  # Recycle connections every 5 minutes
-        "connect_args": {"connect_timeout": 10, "application_name": "hkjc_scraper"},
+        "connect_args": {
+            "connect_timeout": config.DB_CONNECT_TIMEOUT,
+            "application_name": "hkjc_scraper",
+            "options": f"-c statement_timeout={config.DB_STATEMENT_TIMEOUT}"  # Query timeout in milliseconds
+        },
         "echo": False,
     }
 else:
