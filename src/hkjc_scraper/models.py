@@ -79,6 +79,12 @@ class Race(Base):
     horse_sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="race", cascade="all, delete-orphan"
     )
+    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+        "HkjcOdds", back_populates="race", cascade="all, delete-orphan"
+    )
+    offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
+        "OffshoreMarket", back_populates="race", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("meeting_id", "race_no", name="uq_race_meeting_raceno"),
@@ -135,6 +141,12 @@ class Horse(Base):
     sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="horse", cascade="all, delete-orphan"
     )
+    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+        "HkjcOdds", back_populates="horse", cascade="all, delete-orphan"
+    )
+    offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
+        "OffshoreMarket", back_populates="horse", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("code", "name_cn", name="uq_horse_code_name"),
@@ -144,8 +156,6 @@ class Horse(Base):
 
     def __repr__(self) -> str:
         return f"<Horse(id={self.id}, code={self.code}, name={self.name_cn})>"
-
-
 
 
 class HorseHistory(Base):
@@ -268,6 +278,12 @@ class Runner(Base):
     sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="runner", cascade="all, delete-orphan"
     )
+    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+        "HkjcOdds", back_populates="runner", cascade="all, delete-orphan"
+    )
+    offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
+        "OffshoreMarket", back_populates="runner", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("race_id", "horse_id", name="uq_runner_race_horse"),
@@ -312,3 +328,82 @@ class HorseSectional(Base):
 
     def __repr__(self) -> str:
         return f"<HorseSectional(id={self.id}, runner_id={self.runner_id}, section={self.section_no}, position={self.position})>"
+
+
+# ============================================================================
+# HK33 海外賠率時序資料 (HK33 Odds Time-Series Data)
+# ============================================================================
+
+
+class HkjcOdds(Base):
+    __tablename__ = "hkjc_odds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Foreign Keys
+    race_id: Mapped[int] = mapped_column(Integer, ForeignKey("race.id", ondelete="CASCADE"), nullable=False)
+    runner_id: Mapped[int] = mapped_column(Integer, ForeignKey("runner.id", ondelete="CASCADE"), nullable=False)
+    horse_id: Mapped[int] = mapped_column(Integer, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
+
+    # Odds Data
+    bet_type: Mapped[str] = mapped_column(VARCHAR(16), nullable=False)
+    odds_value: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(8, 2))
+    recorded_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    # Metadata
+    source_url: Mapped[Optional[str]] = mapped_column(TEXT)
+    scraped_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+
+    # Relationships
+    race: Mapped["Race"] = relationship("Race", back_populates="offshore_odds")
+    runner: Mapped["Runner"] = relationship("Runner", back_populates="offshore_odds")
+    horse: Mapped["Horse"] = relationship("Horse", back_populates="offshore_odds")
+
+    __table_args__ = (
+        UniqueConstraint("runner_id", "bet_type", "recorded_at", name="uq_hkjc_odds_runner_type_time"),
+        Index("idx_hkjc_odds_race", "race_id"),
+        Index("idx_hkjc_odds_runner", "runner_id"),
+        Index("idx_hkjc_odds_horse", "horse_id"),
+        Index("idx_hkjc_odds_race_type", "race_id", "bet_type"),
+        Index("idx_hkjc_odds_race_time", "race_id", "recorded_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HkjcOdds(race_id={self.race_id}, horse_id={self.horse_id}, bet_type={self.bet_type}, odds={self.odds_value}, time={self.recorded_at})>"
+
+
+class OffshoreMarket(Base):
+    __tablename__ = "offshore_market"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Foreign Keys
+    race_id: Mapped[int] = mapped_column(Integer, ForeignKey("race.id", ondelete="CASCADE"), nullable=False)
+    runner_id: Mapped[int] = mapped_column(Integer, ForeignKey("runner.id", ondelete="CASCADE"), nullable=False)
+    horse_id: Mapped[int] = mapped_column(Integer, ForeignKey("horse.id", ondelete="CASCADE"), nullable=False)
+
+    # Market Data
+    market_type: Mapped[str] = mapped_column(VARCHAR(16), nullable=False)
+    price: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(8, 2))
+    recorded_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    # Metadata
+    source_url: Mapped[Optional[str]] = mapped_column(TEXT)
+    scraped_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+
+    # Relationships
+    race: Mapped["Race"] = relationship("Race", back_populates="offshore_markets")
+    runner: Mapped["Runner"] = relationship("Runner", back_populates="offshore_markets")
+    horse: Mapped["Horse"] = relationship("Horse", back_populates="offshore_markets")
+
+    __table_args__ = (
+        UniqueConstraint("runner_id", "market_type", "recorded_at", name="uq_offshore_market_runner_type_time"),
+        Index("idx_offshore_market_race", "race_id"),
+        Index("idx_offshore_market_runner", "runner_id"),
+        Index("idx_offshore_market_horse", "horse_id"),
+        Index("idx_offshore_market_race_type", "race_id", "market_type"),
+        Index("idx_offshore_market_race_time", "race_id", "recorded_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<OffshoreMarket(race_id={self.race_id}, horse_id={self.horse_id}, market_type={self.market_type}, price={self.price}, time={self.recorded_at})>"

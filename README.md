@@ -5,6 +5,7 @@ A Python web scraper that collects horse racing data from the Hong Kong Jockey C
 ## Features
 
 - Scrapes race results, runner performance, and sectional times
+- **Scrapes real-time odds from HK33.com (Win/Place, Offshore markets)**
 - Stores data in normalized PostgreSQL database with 9 tables
 - Automatic UPSERT operations to handle duplicate data
 - **Database options: Local PostgreSQL (Docker) or Supabase (Cloud)**
@@ -285,6 +286,12 @@ Optional Flags:
   --dry-run               Scrape data but don't save to database
   --force                 Force re-scrape even if data exists
   --scrape-profiles       Also scrape horse profiles from Horse.aspx
+
+HK33 Odds Scraping (Requires .hk33_cookies):
+  --scrape-hk33           Scrape both HKJC odds AND offshore market
+  --scrape-hk33-odds      Scrape ONLY HKJC Win/Place odds
+  --scrape-hk33-market    Scrape ONLY offshore market data
+  --login-hk33            Run Selenium auto-login to refresh cookies
 ```
 
 ## Database Management
@@ -409,6 +416,16 @@ LOG_LEVEL=INFO              # DEBUG, INFO, WARNING, ERROR
 LOG_FILE=hkjc_scraper.log   # Path to log file
 ```
 
+**HK33 Scraping Configuration (Optional):**
+```env
+HK33_EMAIL=your_email@example.com
+HK33_PASSWORD=your_password
+RATE_LIMIT_HK33=0.5
+HK33_REQUEST_TIMEOUT=30
+MAX_HK33_RACE_WORKERS=4
+MAX_HK33_ODDS_WORKERS=6
+```
+
 **Console vs File Output:**
 - **Console**: Clean, user-friendly messages (INFO and above)
 - **File**: Detailed logs with timestamps (DEBUG and above)
@@ -431,6 +448,10 @@ The database consists of 9 tables:
 ### Profile Tables
 - **horse_profile** - Current horse profile snapshot
 - **horse_profile_history** - Historical profile tracking
+
+### Odds Tables
+- **hkjc_odds** - Time-series HKJC odds data
+- **offshore_market** - Offshore market data (Bet/Eat prices)
 
 See `data_model.md` for detailed schema documentation.
 
@@ -457,6 +478,12 @@ Use `--scrape-profiles` flag to enable:
 - Historical profile tracking in `horse_profile_history` table
 
 See `HORSE_PROFILE_IMPLEMENTATION.md` for implementation details.
+
+### From HK33.com (Odds) ✅ **Implemented**
+Use `--scrape-hk33` flag to enable:
+- HKJC Win/Place odds (time-series)
+- Offshore Market odds (Bet/Eat prices) for arbitrage analysis
+- Requires cookie authentication (see `HK33_BROWSER_SCRAPING.md`)
 
 ## Development
 
@@ -545,6 +572,22 @@ uv run mypy .
 **Dependencies not resolving**
 - Clear cache: `uv cache clean`
 - Reinstall: `uv pip install -e . --reinstall`
+
+### HK33 Scraping Errors
+
+**Error: `403 Forbidden` from HK33.com**
+- Cookies expired or invalid
+- Solution: Extract new cookies using `python extract_hk33_cookies.py`
+- Or: Run `hkjc-scraper --login-hk33` for automated login
+
+**Error: `Missing .hk33_cookies file`**
+- Cookie file not found
+- Solution: Follow cookie extraction guide in HK33_BROWSER_SCRAPING.md
+
+**HK33 data not appearing in database**
+- Check if --scrape-hk33 flag was used
+- Verify cookies are valid (check HK33 website manually)
+- Check logs: `grep HK33 hkjc_scraper.log`
 
 ## Development Status
 

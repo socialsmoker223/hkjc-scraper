@@ -1,18 +1,16 @@
 """initial schema with composite unique constraint on horse
 
 Revision ID: afca63e32d55
-Revises: 
+Revises:
 Create Date: 2026-01-13 14:32:45.065493
 
 """
-from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
-
+from collections.abc import Sequence
+from typing import Union
 
 # revision identifiers, used by Alembic.
-revision: str = 'afca63e32d55'
+revision: str = "afca63e32d55"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

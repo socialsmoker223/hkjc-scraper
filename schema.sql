@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS horse (
     dam_name VARCHAR(128),
     dam_sire_name VARCHAR(128),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(code, name_cn)
 );
 
 COMMENT ON TABLE horse IS 'Horse master data with current profile information';
@@ -252,6 +253,57 @@ CREATE INDEX idx_horse_sectional_race_section ON horse_sectional(race_id, sectio
 CREATE INDEX idx_horse_sectional_horse_race ON horse_sectional(horse_id, race_id);
 
 -- ============================================================================
+-- HK33 海外賠率時序資料 (HK33 Odds Time-Series Data)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS hkjc_odds (
+    id BIGSERIAL PRIMARY KEY,
+    race_id BIGINT NOT NULL REFERENCES race(id) ON DELETE CASCADE,
+    runner_id BIGINT NOT NULL REFERENCES runner(id) ON DELETE CASCADE,
+    horse_id BIGINT NOT NULL REFERENCES horse(id) ON DELETE CASCADE,
+    bet_type VARCHAR(16) NOT NULL CHECK (bet_type IN ('bet_w', 'bet_p', 'eat_w', 'eat_p', 'w', 'p')),
+    odds_value DECIMAL(8,2) CHECK (odds_value IS NULL OR odds_value >= 0),
+    recorded_at TIMESTAMP NOT NULL,
+    source_url TEXT,
+    scraped_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(runner_id, bet_type, recorded_at)
+);
+
+COMMENT ON TABLE hkjc_odds IS 'HK33.com odds/prices time-series data';
+COMMENT ON COLUMN hkjc_odds.bet_type IS 'Type: w, p (JCHK) or bet_w, bet_p, eat_w, eat_p (Offshore Market)';
+
+-- Indexes for analysis
+CREATE INDEX idx_hkjc_odds_race ON hkjc_odds(race_id);
+CREATE INDEX idx_hkjc_odds_runner ON hkjc_odds(runner_id);
+CREATE INDEX idx_hkjc_odds_horse ON hkjc_odds(horse_id);
+CREATE INDEX idx_hkjc_odds_race_type ON hkjc_odds(race_id, bet_type);
+CREATE INDEX idx_hkjc_odds_race_time ON hkjc_odds(race_id, recorded_at);
+
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS offshore_market (
+    id BIGSERIAL PRIMARY KEY,
+    race_id BIGINT NOT NULL REFERENCES race(id) ON DELETE CASCADE,
+    runner_id BIGINT NOT NULL REFERENCES runner(id) ON DELETE CASCADE,
+    horse_id BIGINT NOT NULL REFERENCES horse(id) ON DELETE CASCADE,
+    market_type VARCHAR(16) NOT NULL,
+    price DECIMAL(8,2) CHECK (price IS NULL OR price >= 0),
+    recorded_at TIMESTAMP NOT NULL,
+    source_url TEXT,
+    scraped_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(runner_id, market_type, recorded_at)
+);
+
+COMMENT ON TABLE offshore_market IS 'Other offshore market odds/prices';
+
+-- Indexes
+CREATE INDEX idx_offshore_market_race ON offshore_market(race_id);
+CREATE INDEX idx_offshore_market_runner ON offshore_market(runner_id);
+CREATE INDEX idx_offshore_market_horse ON offshore_market(horse_id);
+CREATE INDEX idx_offshore_market_race_type ON offshore_market(race_id, market_type);
+CREATE INDEX idx_offshore_market_race_time ON offshore_market(race_id, recorded_at);
+
+-- ============================================================================
 -- Triggers for automatic updated_at timestamps
 -- ============================================================================
 
@@ -297,6 +349,8 @@ ALTER TABLE jockey ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trainer ENABLE ROW LEVEL SECURITY;
 ALTER TABLE runner ENABLE ROW LEVEL SECURITY;
 ALTER TABLE horse_sectional ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hkjc_odds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE offshore_market ENABLE ROW LEVEL SECURITY;
 
 -- Example policy: Allow public read access
 CREATE POLICY "Allow public read access" ON meeting FOR SELECT USING (true);
@@ -307,6 +361,8 @@ CREATE POLICY "Allow public read access" ON jockey FOR SELECT USING (true);
 CREATE POLICY "Allow public read access" ON trainer FOR SELECT USING (true);
 CREATE POLICY "Allow public read access" ON runner FOR SELECT USING (true);
 CREATE POLICY "Allow public read access" ON horse_sectional FOR SELECT USING (true);
+CREATE POLICY "Allow public read access" ON hkjc_odds FOR SELECT USING (true);
+CREATE POLICY "Allow public read access" ON offshore_market FOR SELECT USING (true);
 
 -- Example policy: Restrict write access to service role only
 -- (Service role bypasses RLS by default, these are for additional auth users)
@@ -396,6 +452,8 @@ BEGIN
     ANALYZE trainer;
     ANALYZE runner;
     ANALYZE horse_sectional;
+    ANALYZE hkjc_odds;
+    ANALYZE offshore_market;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -416,6 +474,7 @@ BEGIN
     RAISE NOTICE '============================================';
     RAISE NOTICE 'Tables: meeting, race, horse, horse_profile_history';
     RAISE NOTICE '        jockey, trainer, runner, horse_sectional';
+    RAISE NOTICE '        hkjc_odds, offshore_market';
     RAISE NOTICE 'Views: v_latest_results, v_horse_performance';
     RAISE NOTICE 'Optimizations: Composite indexes, CHECK constraints, Triggers';
     RAISE NOTICE '============================================';
