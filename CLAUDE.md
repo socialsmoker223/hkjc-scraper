@@ -46,10 +46,14 @@ hkjc 2025/12/23                              # Using shorthand alias
 python -m hkjc_scraper 2025/12/23            # Using module
 
 # Additional options
+hkjc-scraper --version                       # Show version number
 hkjc-scraper 2025/12/23 --dry-run            # Test without saving to DB
 hkjc-scraper --init-db                       # Initialize DB tables only
-hkjc-scraper 2025/12/23 --scrape-profiles    # Include horse profile scraping
 hkjc-scraper 2025/12/23 --force              # Force re-scrape existing data
+
+# Horse profile scraping (enabled by default)
+hkjc-scraper 2025/12/23                      # Includes profile scraping
+hkjc-scraper 2025/12/23 --no-profiles        # Skip profiles for faster execution
 
 # Date range and bulk operations
 hkjc-scraper --date-range 2025/12/01 2025/12/31   # Scrape date range
@@ -144,6 +148,8 @@ See `data_model.md` for detailed schema documentation (in Traditional Chinese).
 
 3. **Orchestration** (`cli.py`):
    - Parses command-line arguments and selects mode (single date, date range, backfill, update)
+   - Helper functions: `parse_date()`, `generate_date_range()`, `log_and_display()`
+   - `ScrapingSummary` dataclass tracks statistics and generates reports
    - Calls scraper functions for each date
    - Batches data by race
    - Calls persistence layer

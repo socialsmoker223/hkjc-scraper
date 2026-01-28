@@ -8,13 +8,15 @@ import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from typing import Optional
 
 import requests
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from tqdm import tqdm
 
+from hkjc_scraper import __version__
 from hkjc_scraper.config import config
 from hkjc_scraper.database import check_connection, get_db, init_db
 from hkjc_scraper.exceptions import ParseError
@@ -31,13 +33,38 @@ from hkjc_scraper.scraper import scrape_meeting
 
 logger = logging.getLogger(__name__)
 
+# Constants
+SEPARATOR = "=" * 60
+
+
+def parse_date(date_str: str) -> date:
+    """Parse date string in YYYY/MM/DD or YYYY-MM-DD format."""
+    return datetime.strptime(date_str.replace("/", "-"), "%Y-%m-%d").date()
+
+
+def generate_date_range(start_date: date, end_date: date) -> list[date]:
+    """Generate list of dates between start and end (inclusive)."""
+    dates = []
+    curr = start_date
+    while curr <= end_date:
+        dates.append(curr)
+        curr += timedelta(days=1)
+    return dates
+
+
+def log_and_display(msg: str, use_tqdm: bool) -> None:
+    """Log message and optionally display via tqdm.write for progress bar compatibility."""
+    logger.info(msg)
+    if use_tqdm:
+        tqdm.write(msg)
+
 
 @dataclass
 class ScrapingSummary:
     """Track scraping statistics for summary reporting"""
 
     start_time: datetime = field(default_factory=datetime.now)
-    end_time: datetime = None
+    end_time: Optional[datetime] = None
 
     # Date tracking
     total_dates: int = 0
@@ -82,9 +109,9 @@ class ScrapingSummary:
     def format_report(self) -> str:
         """Format summary report for display"""
         lines = [
-            "=" * 60,
+            SEPARATOR,
             "SCRAPING SUMMARY",
-            "=" * 60,
+            SEPARATOR,
             f"Duration: {self.duration_seconds:.1f}s ({self.duration_seconds / 60:.1f} minutes)",
             "",
             "Date Statistics:",
@@ -128,7 +155,7 @@ class ScrapingSummary:
                 ]
             )
 
-        lines.append("=" * 60)
+        lines.append(SEPARATOR)
         return "\n".join(lines)
 
 
@@ -225,6 +252,7 @@ def main():
     summary = ScrapingSummary()
 
     parser = argparse.ArgumentParser(description="Scrape HKJC racing data and save to PostgreSQL database")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     # Mutually exclusive group for date selection modes
     group = parser.add_mutually_exclusive_group(required=True)
@@ -261,6 +289,17 @@ def main():
         "--force",
         action="store_true",
         help="Force re-scrape even if data exists in database",
+    )
+    parser.add_argument(
+        "--scrape-profiles",
+        action="store_true",
+        default=True,
+        help="Include horse profile scraping (default: enabled)",
+    )
+    parser.add_argument(
+        "--no-profiles",
+        action="store_true",
+        help="Skip horse profile scraping for faster execution",
     )
     parser.add_argument(
         "--scrape-hk33",
@@ -318,39 +357,31 @@ def main():
             sys.exit(1)
 
     # Determine dates to scrape
-    dates_to_scrape = []
+    dates_to_scrape: list[date] = []
 
     try:
         if args.date:
             # Single date mode
-            date_obj = datetime.strptime(args.date.replace("/", "-"), "%Y-%m-%d").date()
-            dates_to_scrape.append(date_obj)
+            dates_to_scrape.append(parse_date(args.date))
 
         elif args.date_range or args.backfill:
             # Range mode
             range_args = args.date_range or args.backfill
             start_str, end_str = range_args
-            start_date = datetime.strptime(start_str.replace("/", "-"), "%Y-%m-%d").date()
-            end_date = datetime.strptime(end_str.replace("/", "-"), "%Y-%m-%d").date()
+            start_date = parse_date(start_str)
+            end_date = parse_date(end_str)
 
             if start_date > end_date:
                 logger.error("Start date must be before end date")
                 sys.exit(1)
 
-            curr = start_date
-            while curr <= end_date:
-                dates_to_scrape.append(curr)
-                curr += timedelta(days=1)
+            dates_to_scrape = generate_date_range(start_date, end_date)
 
         elif args.start and args.end:
             # Legacy range flags support
-            start_date = datetime.strptime(args.start.replace("/", "-"), "%Y-%m-%d").date()
-            end_date = datetime.strptime(args.end.replace("/", "-"), "%Y-%m-%d").date()
-
-            curr = start_date
-            while curr <= end_date:
-                dates_to_scrape.append(curr)
-                curr += timedelta(days=1)
+            start_date = parse_date(args.start)
+            end_date = parse_date(args.end)
+            dates_to_scrape = generate_date_range(start_date, end_date)
 
         elif args.update:
             # Update mode
@@ -371,10 +402,7 @@ def main():
                 sys.exit(0)
 
             logger.info(f"Updating from {start_date} to {end_date}")
-            curr = start_date
-            while curr <= end_date:
-                dates_to_scrape.append(curr)
-                curr += timedelta(days=1)
+            dates_to_scrape = generate_date_range(start_date, end_date)
 
     except ValueError:
         logger.error("Invalid date format. Use YYYY/MM/DD")
@@ -388,43 +416,44 @@ def main():
 
     # Main scraping loop
     summary.total_dates = len(dates_to_scrape)
+    use_tqdm = len(dates_to_scrape) > 1
 
     # Use tqdm only if scraping more than 1 day
-    iterator = tqdm(dates_to_scrape, desc="Processing") if len(dates_to_scrape) > 1 else dates_to_scrape
+    iterator = tqdm(dates_to_scrape, desc="Processing") if use_tqdm else dates_to_scrape
 
     for date_obj in iterator:
         date_ymd = date_obj.strftime("%Y/%m/%d")
 
-        # Display current date if not using tqdm or using it for multiple days
-        if len(dates_to_scrape) == 1:
-            logger.info(f"\n{'=' * 60}\nScraping races for {date_ymd}\n{'=' * 60}\n")
+        # Display current date if not using tqdm
+        if not use_tqdm:
+            logger.info(f"\n{SEPARATOR}\nScraping races for {date_ymd}\n{SEPARATOR}\n")
 
         # Check if exists
         if not args.force:
             with get_db() as db:
                 if check_meeting_exists(db, date_obj):
-                    msg = f"Skipping {date_ymd} - Already exists (use --force to override)"
-                    logger.info(msg)
-                    if len(dates_to_scrape) > 1:
-                        tqdm.write(msg)
+                    log_and_display(
+                        f"Skipping {date_ymd} - Already exists (use --force to override)",
+                        use_tqdm,
+                    )
                     summary.dates_skipped += 1
                     continue
 
         try:
-            meeting_data = scrape_meeting(date_ymd)
+            scrape_profiles = args.scrape_profiles and not args.no_profiles
+            meeting_data = scrape_meeting(date_ymd, scrape_profiles=scrape_profiles)
 
             if not meeting_data:
-                msg = f"No races found for {date_ymd}"
-                if len(dates_to_scrape) == 1:
-                    logger.info(msg)
+                if not use_tqdm:
+                    logger.info(f"No races found for {date_ymd}")
                 continue
 
             # Save to database or dry run
             if args.dry_run:
-                msg = f"[DRY RUN] {date_ymd}: Would save {len(meeting_data)} races"
-                logger.info(msg)
-                if len(dates_to_scrape) > 1:
-                    tqdm.write(msg)
+                log_and_display(
+                    f"[DRY RUN] {date_ymd}: Would save {len(meeting_data)} races",
+                    use_tqdm,
+                )
                 summary.dates_scraped += 1
             else:
                 with get_db() as db:
@@ -437,10 +466,10 @@ def main():
                 summary.sectionals_saved += save_result.get("sectionals_saved", 0)
                 summary.profiles_saved += save_result.get("profiles_saved", 0)
 
-                msg = f"Saved {date_ymd}: {save_result['races_saved']} races, {save_result['runners_saved']} runners"
-                logger.info(msg)
-                if len(dates_to_scrape) > 1:
-                    tqdm.write(msg)
+                log_and_display(
+                    f"Saved {date_ymd}: {save_result['races_saved']} races, {save_result['runners_saved']} runners",
+                    use_tqdm,
+                )
 
                 # Scrape HK33 data if requested
                 if args.scrape_hk33 or args.scrape_hk33_odds or args.scrape_hk33_market:
@@ -456,48 +485,44 @@ def main():
                             summary.hk33_hkjc_saved += hk33_result["hkjc_saved"]
                             summary.hk33_offshore_saved += hk33_result["offshore_saved"]
 
-                            hk33_msg = f"HK33 {date_ymd}: {hk33_result['hkjc_saved']} hkjc odds, {hk33_result['offshore_saved']} offshore records"
-                            logger.info(hk33_msg)
-                            if len(dates_to_scrape) > 1:
-                                tqdm.write(hk33_msg)
+                            log_and_display(
+                                f"HK33 {date_ymd}: {hk33_result['hkjc_saved']} hkjc odds, {hk33_result['offshore_saved']} offshore records",
+                                use_tqdm,
+                            )
 
                     except Exception as e:
                         summary.hk33_errors += 1
                         logger.error(f"Failed to scrape HK33 data for {date_ymd}: {e}")
-                        if len(dates_to_scrape) > 1:
+                        if use_tqdm:
                             tqdm.write(f"HK33 error for {date_ymd}")
 
         except requests.RequestException as e:
             summary.network_errors += 1
             summary.dates_failed += 1
             logger.error(f"Network error scraping {date_ymd}: {e}")
-            msg = f"Network error for {date_ymd} (check connection)"
-            if len(dates_to_scrape) > 1:
-                tqdm.write(msg)
+            if use_tqdm:
+                tqdm.write(f"Network error for {date_ymd} (check connection)")
             continue
         except ParseError as e:
             summary.parse_errors += 1
             summary.dates_failed += 1
             logger.error(f"Parse error for {date_ymd}: {e}")
-            msg = f"Parse error for {date_ymd} (HKJC site may have changed)"
-            if len(dates_to_scrape) > 1:
-                tqdm.write(msg)
+            if use_tqdm:
+                tqdm.write(f"Parse error for {date_ymd} (HKJC site may have changed)")
             continue
         except SQLAlchemyError as e:
             summary.db_errors += 1
             summary.dates_failed += 1
             logger.error(f"Database error for {date_ymd}: {e}")
-            msg = f"Database error for {date_ymd} (check DB connection)"
-            if len(dates_to_scrape) > 1:
-                tqdm.write(msg)
+            if use_tqdm:
+                tqdm.write(f"Database error for {date_ymd} (check DB connection)")
             continue
         except Exception as e:
             summary.other_errors += 1
             summary.dates_failed += 1
             logger.exception(f"Unexpected error for {date_ymd}: {e}")
-            msg = f"Unexpected error for {date_ymd}: {str(e)}"
-            if len(dates_to_scrape) > 1:
-                tqdm.write(msg)
+            if use_tqdm:
+                tqdm.write(f"Unexpected error for {date_ymd}: {e!s}")
             continue
 
     # Final summary

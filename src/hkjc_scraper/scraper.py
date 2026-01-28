@@ -746,7 +746,7 @@ def scrape_sectional_time(date_dmy: str, race_no: int, session: HTTPSession):
 # -------------------------------------------------------------------
 
 
-def scrape_meeting(date_ymd: str):
+def scrape_meeting(date_ymd: str, scrape_profiles: bool = True):
     """
     例: scrape_meeting('2025/12/23')
 
@@ -763,6 +763,7 @@ def scrape_meeting(date_ymd: str):
 
     Args:
         date_ymd: Race date in YYYY/MM/DD format
+        scrape_profiles: Whether to scrape horse profile data (default: True)
     """
     # Use HTTPSession context manager for connection pooling
     with HTTPSession() as session:
@@ -808,7 +809,10 @@ def scrape_meeting(date_ymd: str):
         # Sort races by race number to maintain order
         all_races.sort(key=lambda x: x["race"]["race_no"])
 
-        # Now scrape horse profiles for ALL unique horses across ALL races (batch processing)
+        # Optionally scrape horse profiles for ALL unique horses across ALL races (batch processing)
+        if not scrape_profiles:
+            return all_races
+
         all_horses_to_scrape = []
         for race_data in all_races:
             for horse in race_data["horses"]:
