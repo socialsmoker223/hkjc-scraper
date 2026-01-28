@@ -148,6 +148,45 @@ View database stats in Supabase Dashboard:
 - Consider switching to closer region (requires new project)
 - Verify connection uses pooler (port 6543)
 
+### Timeout Errors
+
+**Error: `could not receive data from server: Operation timed out`**
+
+This error typically occurs when:
+- Transaction is too large (too many rows committed at once)
+- Query takes too long to complete
+- Network connection is unstable
+
+**Solutions:**
+
+1. **Transaction Size Best Practice:**
+   - The scraper commits **per race** (not per meeting)
+   - Each transaction saves ~100-200 rows
+   - This prevents timeout issues with large meetings
+
+2. **Increase Timeouts (if needed):**
+   ```bash
+   # In .env
+   DB_CONNECT_TIMEOUT=30           # Connection timeout (seconds)
+   DB_STATEMENT_TIMEOUT=60000      # Query timeout (milliseconds)
+   ```
+
+3. **Connection Pool Configuration:**
+   - Scraper uses `pool_size=3` for Supabase (PgBouncer compatible)
+   - `max_overflow=7` allows up to 10 total connections
+   - `pool_pre_ping=True` validates connections before use
+   - `pool_recycle=300` recycles connections every 5 minutes
+
+4. **Use Pooler (Port 6543):**
+   - Always use connection pooler for normal operations
+   - Only use direct connection (port 5432) for migrations
+
+**Why This Works:**
+- Supabase uses PgBouncer pooler with transaction timeouts
+- Smaller transactions (per race) complete faster
+- Automatic retry logic handles transient network errors
+- Connection pooling reduces overhead
+
 ## Switching Back to Local PostgreSQL
 
 Edit `.env`:

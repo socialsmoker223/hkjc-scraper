@@ -27,7 +27,7 @@ if config.DATABASE_TYPE == "supabase":
         "connect_args": {
             "connect_timeout": config.DB_CONNECT_TIMEOUT,
             "application_name": "hkjc_scraper",
-            "options": f"-c statement_timeout={config.DB_STATEMENT_TIMEOUT}"  # Query timeout in milliseconds
+            "options": f"-c statement_timeout={config.DB_STATEMENT_TIMEOUT}",  # Query timeout in milliseconds
         },
         "echo": False,
     }
@@ -82,9 +82,8 @@ def migrate_db(command: str = "upgrade", revision: str = "head"):
     """
     from pathlib import Path
 
-    from alembic.config import Config
-
     from alembic import command as alembic_command
+    from alembic.config import Config
 
     # Get project root (database.py is in src/hkjc_scraper/)
     project_root = Path(__file__).resolve().parents[2]

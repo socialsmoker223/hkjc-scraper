@@ -9,6 +9,10 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
   - Race header parsing (class, distance, track, going, prize)
   - Runner performance data (positions, weights, odds, times)
   - Horse, jockey, trainer extraction with code/ID parsing
+- ✅ **HK33 Odds Scraping** (hk33_scraper.py) - Fully implemented
+  - Time-series HKJC win/place odds
+  - Offshore market odds (Bet/Eat prices)
+  - Cookie-based authentication bypassing 403 blocks
 - ✅ **Sectional time extraction** (DisplaySectionalTime.aspx in hkjc_scraper.py) - Fully implemented
   - Per-section performance for each horse
   - Section positions, margins, and split times
@@ -55,6 +59,15 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
   - Detailed statistics: duration, success rate, data counts
   - Error breakdown and validation statistics
   - Displayed after every scraping run
+- ✅ **Database Schema Update - FULLY IMPLEMENTED** (2026-01-15)
+  - Added unique constraint on `horse.code` + `horse.name_cn`
+  - Prevents duplicate horses with same code but different names (rare case)
+  - Updated persistence logic to handle this composite key
+- ✅ **HK33 Odds Integration - FULLY IMPLEMENTED** (2026-01-17)
+  - New tables: `hkjc_odds` and `offshore_market`
+  - Browser-based cookie extraction for authentication
+  - Automated login via Selenium (optional)
+  - Integration with main CLI via `--scrape-hk33` flag
 
 **❌ What's Missing:**
 - **Phase 5**: Pytest test suite (unit/integration tests for scraping functions) - **TOP PRIORITY**
@@ -417,6 +430,10 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
   - [ ] Monitor with Flower dashboard
 
 ### 6.3 Data Enrichment
+- [x] **HK33 Odds Data** ✅ (Implemented 2026-01-17)
+  - [x] HKJC Win/Place time-series
+  - [x] Offshore market (Blue/Red prices)
+  - [x] Cookie-based authentication
 - [ ] **Scrape additional HKJC pages**
   - [ ] Dividends page (WIN/PLA/QIN/QPL/TCE/TRI/F-F/Quartet pools)
   - [ ] Track work times (gallop times between races)
@@ -443,8 +460,8 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
 ## Progress Tracking
 
 **Current Phase:** Phase 5 - Quality & Testing (scraping test suite needed)
-**Overall Completion:** 98% ⬆️ (+10% from logging, Supabase, summary reports)
-**Last Updated:** 2026-01-11 (updated after validation removal)
+**Overall Completion:** ~99% ⬆️ (+HK33 integration)
+**Last Updated:** 2026-01-17 (HK33 integration + Schema update)
 **Total Python Code:** ~2,200 lines across 9+ files (enhanced logging, error handling, persistence)
 
 ### Completion by Phase

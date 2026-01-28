@@ -87,6 +87,13 @@ class HTTPSession:
 
         return self.session.get(url, **kwargs)
 
+    @property
+    def cookies(self):
+        """Access underlying session cookies"""
+        if self.session:
+            return self.session.cookies
+        return None
+
 
 def retry_on_network_error(func: Callable) -> Callable:
     """
