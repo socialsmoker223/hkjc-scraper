@@ -20,7 +20,7 @@ from hkjc_scraper import __version__
 from hkjc_scraper.config import config
 from hkjc_scraper.database import check_connection, get_db, init_db
 from hkjc_scraper.exceptions import ParseError
-from hkjc_scraper.hk33_scraper import scrape_hk33_race_all_types
+from hkjc_scraper.hk33_scraper import scrape_hk33_meeting_by_type
 from hkjc_scraper.http_utils import HTTPSession
 from hkjc_scraper.persistence import (
     check_meeting_exists,
@@ -161,7 +161,8 @@ class ScrapingSummary:
 
 def scrape_and_save_hk33_meeting(db, date_obj, meeting_data, session, scrape_odds: bool, scrape_market: bool) -> dict:
     """
-    Scrape and save HK33 data for all races in a meeting using parallel execution.
+    Scrape and save HK33 data for all races in a meeting.
+    OPTIMIZED: Scrapes by bet_type first (all races for each type) for better performance.
 
     Args:
         db: Database session (unused, kept for API compatibility)
@@ -180,16 +181,24 @@ def scrape_and_save_hk33_meeting(db, date_obj, meeting_data, session, scrape_odd
     hkjc_total = 0
     offshore_total = 0
 
-    def scrape_single_hk33_race(race_data_dict):
-        """Helper function to scrape and save HK33 data for a single race"""
-        race_no = race_data_dict["race"]["race_no"]
+    # Extract race numbers from meeting_data
+    race_numbers = [race_data["race"]["race_no"] for race_data in meeting_data]
 
+    # Scrape all races using optimized by-type approach
+    logger.info(f"Starting optimized HK33 scraping for {len(race_numbers)} races on {date_ymd}")
+    hk33_results = scrape_hk33_meeting_by_type(
+        session, date_ymd, race_numbers, scrape_hkjc=scrape_odds, scrape_market=scrape_market
+    )
+
+    # Save results to database (process each race)
+    def save_single_race_hk33(race_no: int, hk33_data: dict):
+        """Helper function to save HK33 data for a single race"""
         try:
-            # Get runner mapping from DB
+            # Get runner mapping and race_id from DB
             with get_db() as race_db:
                 runner_map = get_runner_map(race_db, date_obj, race_no)
                 if not runner_map:
-                    logger.warning(f"No runners found for race {race_no} on {date_ymd}, skipping HK33")
+                    logger.warning(f"No runners found for race {race_no} on {date_ymd}, skipping HK33 save")
                     return {"hkjc_saved": 0, "offshore_saved": 0}
 
                 # Get race_id from DB
@@ -201,13 +210,8 @@ def scrape_and_save_hk33_meeting(db, date_obj, meeting_data, session, scrape_odd
                 race_id = race_db.execute(stmt).scalar_one_or_none()
 
                 if not race_id:
-                    logger.warning(f"Race {race_no} not found in DB for {date_ymd}, skipping HK33")
+                    logger.warning(f"Race {race_no} not found in DB for {date_ymd}, skipping HK33 save")
                     return {"hkjc_saved": 0, "offshore_saved": 0}
-
-                # Scrape HK33 data (parallelized within each race)
-                hk33_data = scrape_hk33_race_all_types(
-                    session, date_ymd, race_no, scrape_hkjc=scrape_odds, scrape_market=scrape_market
-                )
 
                 # Save to database
                 result = save_hk33_data(
@@ -226,12 +230,15 @@ def scrape_and_save_hk33_meeting(db, date_obj, meeting_data, session, scrape_odd
                 return result
 
         except Exception as e:
-            logger.error(f"Failed to scrape/save HK33 data for race {race_no}: {e}")
+            logger.error(f"Failed to save HK33 data for race {race_no}: {e}")
             return {"hkjc_saved": 0, "offshore_saved": 0}
 
-    # Scrape all races in parallel
+    # Save all races in parallel (separate from scraping)
     with ThreadPoolExecutor(max_workers=config.MAX_HK33_RACE_WORKERS) as executor:
-        future_to_race = {executor.submit(scrape_single_hk33_race, race_data): race_data for race_data in meeting_data}
+        future_to_race = {
+            executor.submit(save_single_race_hk33, race_no, hk33_data): race_no
+            for race_no, hk33_data in hk33_results.items()
+        }
 
         for future in as_completed(future_to_race):
             try:
@@ -239,9 +246,8 @@ def scrape_and_save_hk33_meeting(db, date_obj, meeting_data, session, scrape_odd
                 hkjc_total += result["hkjc_saved"]
                 offshore_total += result["offshore_saved"]
             except Exception as e:
-                race_data = future_to_race[future]
-                race_no = race_data["race"]["race_no"]
-                logger.error(f"Unexpected error processing HK33 for race {race_no}: {e}")
+                race_no = future_to_race[future]
+                logger.error(f"Unexpected error processing HK33 save for race {race_no}: {e}")
 
     return {"hkjc_saved": hkjc_total, "offshore_saved": offshore_total}
 

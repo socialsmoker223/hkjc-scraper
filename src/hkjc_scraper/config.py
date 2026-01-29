@@ -73,8 +73,12 @@ class Config:
     HK33_EMAIL = os.getenv("HK33_EMAIL", "")
     HK33_PASSWORD = os.getenv("HK33_PASSWORD", "")
 
+    # HK33 adaptive rate limiting
+    RATE_LIMIT_HK33_SAME_PATH = float(os.getenv("RATE_LIMIT_HK33_SAME_PATH", "0.3"))  # Same endpoint, different params
+    RATE_LIMIT_HK33_PATH_CHANGE = float(os.getenv("RATE_LIMIT_HK33_PATH_CHANGE", "15.0"))  # Different endpoint
+
     # HK33 concurrency settings
-    MAX_HK33_RACE_WORKERS = int(os.getenv("MAX_HK33_RACE_WORKERS", "4"))  # Concurrent HK33 race scraping
+    MAX_HK33_RACE_WORKERS = int(os.getenv("MAX_HK33_RACE_WORKERS", "2"))  # Concurrent HK33 race scraping (reduced to avoid 429)
     MAX_HK33_ODDS_WORKERS = int(os.getenv("MAX_HK33_ODDS_WORKERS", "6"))  # Concurrent odds type scraping per race
 
     # Logging settings

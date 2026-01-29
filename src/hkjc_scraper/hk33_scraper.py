@@ -7,17 +7,21 @@ import decimal
 import json
 import logging
 import re
+import time as time_module
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
+from threading import Lock
+from urllib.parse import urlparse
 
 import pytz
+import requests
 from bs4 import BeautifulSoup
 
 from hkjc_scraper import config
 from hkjc_scraper.exceptions import ParseError
-from hkjc_scraper.http_utils import HTTPSession, rate_limited, retry_on_network_error
+from hkjc_scraper.http_utils import HTTPSession
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,117 @@ _TIME_ONLY_PATTERN = re.compile(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$")
 # Cookie cache
 _cookies_loaded = False
 _cookies = {}
+
+
+class AdaptiveRateLimiter:
+    """
+    Adaptive rate limiter that applies different delays based on URL path changes.
+
+    - Same URL path (different query params): Lower delay (RATE_LIMIT_HK33_SAME_PATH)
+    - Different URL path: Higher delay (RATE_LIMIT_HK33_PATH_CHANGE)
+
+    Thread-safe for concurrent usage.
+    """
+
+    def __init__(
+        self,
+        same_path_delay: float = config.RATE_LIMIT_HK33_SAME_PATH,
+        path_change_delay: float = config.RATE_LIMIT_HK33_PATH_CHANGE,
+    ):
+        self.same_path_delay = same_path_delay
+        self.path_change_delay = path_change_delay
+        self._last_url_path = None
+        self._last_request_time = 0.0
+        self._lock = Lock()
+
+    def wait_if_needed(self, url: str) -> None:
+        """
+        Wait if needed before making a request to the given URL.
+
+        Args:
+            url: The URL to be requested
+        """
+        parsed = urlparse(url)
+        current_path = parsed.path
+
+        with self._lock:
+            now = time_module.time()
+            elapsed = now - self._last_request_time
+
+            # Determine required delay
+            if self._last_url_path is None:
+                # First request, no delay
+                required_delay = 0.0
+            elif current_path == self._last_url_path:
+                # Same path, use lower delay
+                required_delay = self.same_path_delay
+                logger.debug(f"Same path detected: {current_path}, using {required_delay}s delay")
+            else:
+                # Different path, use higher delay
+                required_delay = self.path_change_delay
+                logger.info(
+                    f"Path change detected: {self._last_url_path} -> {current_path}, using {required_delay}s delay"
+                )
+
+            # Calculate remaining wait time
+            remaining = required_delay - elapsed
+            if remaining > 0:
+                logger.debug(f"Rate limiting: waiting {remaining:.2f}s before request")
+                time_module.sleep(remaining)
+
+            # Update state
+            self._last_url_path = current_path
+            self._last_request_time = time_module.time()
+
+
+# Global adaptive rate limiter instance
+_adaptive_rate_limiter = AdaptiveRateLimiter()
+
+
+def retry_on_429(max_retries: int = 3, backoff_delay: float = 15.0):
+    """
+    Decorator to retry HTTP requests on 429 (Too Many Requests) errors.
+
+    When a 429 error is received:
+    1. Log a warning
+    2. Wait for backoff_delay seconds (default 15s)
+    3. Retry the request
+    4. After max_retries, raise the exception
+
+    This prevents getting banned (403) by respecting rate limits.
+
+    Args:
+        max_retries: Maximum number of retry attempts (default: 3)
+        backoff_delay: Time to wait after 429 before retrying (default: 15s)
+    """
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except requests.HTTPError as e:
+                    if e.response.status_code == 429:
+                        if attempt < max_retries:
+                            logger.warning(
+                                f"429 Too Many Requests received (attempt {attempt + 1}/{max_retries + 1}). "
+                                f"Waiting {backoff_delay}s before retry..."
+                            )
+                            time_module.sleep(backoff_delay)
+                            continue
+                        else:
+                            logger.error(f"Max retries ({max_retries}) exceeded for 429 errors. Giving up.")
+                            raise
+                    else:
+                        # Not a 429 error, raise immediately
+                        raise
+                except Exception as e:
+                    # Non-HTTP errors, raise immediately
+                    raise
+
+        return wrapper
+
+    return decorator
 
 
 def load_hk33_cookies() -> dict:
@@ -237,12 +352,13 @@ def resolve_datetime_series(race_date: date, time_strings: list[str]) -> list[da
     return resolved_datetimes
 
 
-@rate_limited(config.RATE_LIMIT_HK33)
-@retry_on_network_error
+@retry_on_429(max_retries=3, backoff_delay=15.0)
 def scrape_hk33_hkjc_odds(session: HTTPSession, date_ymd: str, race_no: int, bet_type: str) -> list[dict]:
     """
     Scrape hkjc Win/Place odds from HK33.
     Resolves timestamps relative to race date.
+    Uses adaptive rate limiting based on URL path changes.
+    Retries on 429 (Too Many Requests) with 15s backoff.
     """
     # Convert date format: 2026/01/14 → 2026-01-14
     date_dash = date_ymd.replace("/", "-")
@@ -252,6 +368,9 @@ def scrape_hk33_hkjc_odds(session: HTTPSession, date_ymd: str, race_no: int, bet
     url = f"{config.HK33_BASE_URL}/jc-wp-trends-history?date={date_dash}&race={race_no}&type={bet_type}"
 
     logger.debug(f"Scraping hkjc {bet_type} odds: {url}")
+
+    # Adaptive rate limiting
+    _adaptive_rate_limiter.wait_if_needed(url)
 
     # Load and set cookies
     cookies = load_hk33_cookies()
@@ -477,11 +596,12 @@ def parse_hk33_odds_from_html(html: str, url: str, bet_type: str, data_type: str
     return results
 
 
-@rate_limited(config.RATE_LIMIT_HK33)
-@retry_on_network_error
+@retry_on_429(max_retries=3, backoff_delay=15.0)
 def scrape_hk33_offshore_market(session: HTTPSession, date_ymd: str, race_no: int, market_type: str) -> list[dict]:
     """
     Scrape offshore market Bet/Eat data from HK33 using HTTP.
+    Uses adaptive rate limiting based on URL path changes.
+    Retries on 429 (Too Many Requests) with 15s backoff.
 
     Args:
         session: HTTP session for making requests
@@ -513,6 +633,9 @@ def scrape_hk33_offshore_market(session: HTTPSession, date_ymd: str, race_no: in
     url = f"{config.HK33_BASE_URL}/offshore-market-trends-history?date={date_dash}&race={race_no}&type={market_type}"
 
     logger.debug(f"Scraping offshore market {market_type}: {url}")
+
+    # Adaptive rate limiting
+    _adaptive_rate_limiter.wait_if_needed(url)
 
     # Load cookies
     cookies = load_hk33_cookies()
@@ -596,3 +719,86 @@ def scrape_hk33_race_all_types(
                 logger.error(f"Failed to scrape {task_type} {odds_type} for race {race_no}: {e}")
 
     return {"hkjc_data": hkjc_data, "market_data": market_data}
+
+
+def scrape_hk33_meeting_by_type(
+    session: HTTPSession,
+    date_ymd: str,
+    race_numbers: list[int],
+    scrape_hkjc: bool = True,
+    scrape_market: bool = True,
+) -> dict[int, dict]:
+    """
+    Scrape HK33 data by bet_type/market first, then all races for each type.
+    This optimizes for URL path locality and better server-side caching.
+
+    Algorithm:
+    1. Build list of bet_types to scrape (hkjc: w, p; market: bet-w, bet-p, eat-w, eat-p)
+    2. For each bet_type:
+       - Scrape all races in parallel (max MAX_HK33_RACE_WORKERS workers)
+       - Collect results
+    3. Organize results by race_no for backwards compatibility
+
+    Args:
+        session: HTTP session
+        date_ymd: Date in "YYYY/MM/DD" format
+        race_numbers: List of race numbers to scrape (e.g., [1, 2, 3, ..., 11])
+        scrape_hkjc: Whether to scrape hkjc Win/Place odds
+        scrape_market: Whether to scrape offshore market data
+
+    Returns:
+        Dict mapping race_no to data dict:
+        {
+            1: {'hkjc_data': [...], 'market_data': [...]},
+            2: {'hkjc_data': [...], 'market_data': [...]},
+            ...
+        }
+    """
+    # Initialize results structure
+    results = {race_no: {"hkjc_data": [], "market_data": []} for race_no in race_numbers}
+
+    # Build list of bet_types to scrape
+    bet_types = []
+    if scrape_hkjc:
+        bet_types.append(("hkjc", "w"))
+        bet_types.append(("hkjc", "p"))
+    if scrape_market:
+        for market_type in ["bet-w", "bet-p", "eat-w", "eat-p"]:
+            bet_types.append(("market", market_type))
+
+    logger.info(
+        f"Starting optimized HK33 scraping: {len(bet_types)} types × {len(race_numbers)} races = {len(bet_types) * len(race_numbers)} requests"
+    )
+
+    # Process each bet_type, scraping all races in parallel
+    for task_type, odds_type in bet_types:
+        logger.info(f"Scraping {task_type} {odds_type} for all {len(race_numbers)} races...")
+
+        with ThreadPoolExecutor(max_workers=config.MAX_HK33_RACE_WORKERS) as executor:
+            # Submit all races for this bet_type
+            future_to_race = {}
+            for race_no in race_numbers:
+                if task_type == "hkjc":
+                    future = executor.submit(scrape_hk33_hkjc_odds, session, date_ymd, race_no, odds_type)
+                else:  # market
+                    future = executor.submit(scrape_hk33_offshore_market, session, date_ymd, race_no, odds_type)
+                future_to_race[future] = race_no
+
+            # Collect results as they complete
+            for future in as_completed(future_to_race):
+                race_no = future_to_race[future]
+                try:
+                    data = future.result()
+                    if task_type == "hkjc":
+                        results[race_no]["hkjc_data"].extend(data)
+                    else:
+                        results[race_no]["market_data"].extend(data)
+                except Exception as e:
+                    logger.error(f"Failed to scrape {task_type} {odds_type} for race {race_no}: {e}")
+
+    # Log summary
+    total_hkjc = sum(len(r["hkjc_data"]) for r in results.values())
+    total_market = sum(len(r["market_data"]) for r in results.values())
+    logger.info(f"Completed HK33 scraping: {total_hkjc} hkjc records, {total_market} market records")
+
+    return results
