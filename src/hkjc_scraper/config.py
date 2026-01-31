@@ -68,17 +68,22 @@ class Config:
 
     # HK33 scraping settings
     HK33_BASE_URL = "https://horse.hk33.com/analysis"
-    RATE_LIMIT_HK33 = float(os.getenv("RATE_LIMIT_HK33", "0.5"))
     HK33_REQUEST_TIMEOUT = int(os.getenv("HK33_REQUEST_TIMEOUT", "30"))
     HK33_EMAIL = os.getenv("HK33_EMAIL", "")
     HK33_PASSWORD = os.getenv("HK33_PASSWORD", "")
+
+    # HK33 session recovery
+    HK33_MAX_RELOGINS = int(os.getenv("HK33_MAX_RELOGINS", "3"))
+    HK33_LOGIN_URL = "https://www.hk33.com/zh-yue/user-ajaj/user.login.ajaj"
 
     # HK33 adaptive rate limiting
     RATE_LIMIT_HK33_SAME_PATH = float(os.getenv("RATE_LIMIT_HK33_SAME_PATH", "0.3"))  # Same endpoint, different params
     RATE_LIMIT_HK33_PATH_CHANGE = float(os.getenv("RATE_LIMIT_HK33_PATH_CHANGE", "15.0"))  # Different endpoint
 
     # HK33 concurrency settings
-    MAX_HK33_RACE_WORKERS = int(os.getenv("MAX_HK33_RACE_WORKERS", "2"))  # Concurrent HK33 race scraping (reduced to avoid 429)
+    MAX_HK33_RACE_WORKERS = int(
+        os.getenv("MAX_HK33_RACE_WORKERS", "2")
+    )  # Concurrent HK33 race scraping (reduced to avoid 429)
     MAX_HK33_ODDS_WORKERS = int(os.getenv("MAX_HK33_ODDS_WORKERS", "6"))  # Concurrent odds type scraping per race
 
     # Logging settings

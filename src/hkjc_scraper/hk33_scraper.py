@@ -6,6 +6,7 @@ HK33.com 歷史賠率及海外市場數據爬蟲
 import decimal
 import json
 import logging
+import random
 import re
 import time as time_module
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,13 +29,23 @@ logger = logging.getLogger(__name__)
 # Hong Kong timezone
 HKT = pytz.timezone("Asia/Hong_Kong")
 
-# Pre-compiled regex patterns for performance
-_FULL_TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
-_TIME_ONLY_PATTERN = re.compile(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$")
-
 # Cookie cache
 _cookies_loaded = False
 _cookies = {}
+
+# Session recovery: track re-login attempts per scraping session
+_relogin_count = 0
+_relogin_lock = Lock()
+
+# User-Agent rotation pool
+_USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+]
 
 
 class AdaptiveRateLimiter:
@@ -87,6 +98,11 @@ class AdaptiveRateLimiter:
                     f"Path change detected: {self._last_url_path} -> {current_path}, using {required_delay}s delay"
                 )
 
+            # Add ±20% random jitter to avoid predictable request patterns
+            if required_delay > 0:
+                jitter = required_delay * random.uniform(-0.2, 0.2)
+                required_delay = max(0, required_delay + jitter)
+
             # Calculate remaining wait time
             remaining = required_delay - elapsed
             if remaining > 0:
@@ -102,17 +118,112 @@ class AdaptiveRateLimiter:
 _adaptive_rate_limiter = AdaptiveRateLimiter()
 
 
-def retry_on_429(max_retries: int = 3, backoff_delay: float = 15.0):
+def refresh_hk33_session() -> dict[str, str]:
     """
-    Decorator to retry HTTP requests on 429 (Too Many Requests) errors.
+    Refresh the HK33 session by performing a requests-based re-login.
 
-    When a 429 error is received:
-    1. Log a warning
-    2. Wait for backoff_delay seconds (default 15s)
-    3. Retry the request
-    4. After max_retries, raise the exception
+    Clears the cookie cache and attempts to get fresh cookies via login.
+    Respects the HK33_MAX_RELOGINS limit to avoid infinite loops.
 
-    This prevents getting banned (403) by respecting rate limits.
+    Returns:
+        Dict of cookie name -> value on success, empty dict on failure or limit exceeded.
+    """
+    global _cookies_loaded, _cookies, _relogin_count
+
+    with _relogin_lock:
+        if _relogin_count >= config.HK33_MAX_RELOGINS:
+            logger.error(
+                f"Max re-login attempts ({config.HK33_MAX_RELOGINS}) reached. "
+                f"Skipping re-login. Manual cookie refresh may be needed."
+            )
+            return {}
+
+        _relogin_count += 1
+        current_attempt = _relogin_count
+
+    logger.warning(f"Refreshing HK33 session (attempt {current_attempt}/{config.HK33_MAX_RELOGINS})...")
+
+    # Clear cookie cache
+    _cookies_loaded = False
+    _cookies.clear()
+
+    # Attempt requests-based login
+    from hkjc_scraper.hk33_login import login_hk33_requests
+
+    new_cookies = login_hk33_requests()
+
+    if new_cookies:
+        _cookies.update(new_cookies)
+        _cookies_loaded = True
+        logger.info(f"HK33 session refreshed successfully ({len(new_cookies)} cookies)")
+        return new_cookies
+
+    # If requests login failed, try reloading from file (maybe Selenium was used externally)
+    logger.warning("Requests-based login failed. Attempting to reload cookies from file...")
+    return load_hk33_cookies()
+
+
+def reset_relogin_counter() -> None:
+    """Reset the re-login counter. Call at the start of each scraping session."""
+    global _relogin_count
+    with _relogin_lock:
+        _relogin_count = 0
+
+
+def _is_login_redirect(response: requests.Response) -> bool:
+    """Check if a response is a redirect to the login page or contains a login form."""
+    # Check redirect chain
+    if response.history:
+        for r in response.history:
+            if "login" in r.headers.get("Location", "").lower():
+                return True
+
+    # Check final URL
+    if "login" in response.url.lower() and "login-register" in response.url.lower():
+        return True
+
+    # Check HTML content for login form (lightweight check)
+    if "login-register" in response.text[:2000]:
+        return True
+
+    return False
+
+
+def _handle_login_redirect(
+    resp: requests.Response, session: HTTPSession, url: str
+) -> requests.Response | None:
+    """
+    Check if response is a login redirect and attempt session recovery.
+
+    Returns:
+        The original response if no redirect, a new response after successful
+        re-login, or None if recovery failed.
+    """
+    if not _is_login_redirect(resp):
+        return resp
+
+    logger.warning(f"Login redirect detected for {url} - session expired")
+    new_cookies = refresh_hk33_session()
+    if not new_cookies:
+        logger.error("Session refresh failed after login redirect")
+        return None
+
+    for name, value in new_cookies.items():
+        session.cookies.set(name, value, domain="horse.hk33.com")
+    resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    return resp
+
+
+def retry_on_hk33_error(max_retries: int = 3, backoff_delay: float = 15.0):
+    """
+    Decorator to retry HTTP requests on HK33 errors with session recovery.
+
+    Handles:
+    - 429 (Too Many Requests): Wait backoff_delay, then retry
+    - 403 (Forbidden/Session Expired): Refresh session via re-login, then retry
+    - Connection errors (RemoteDisconnected, ConnectionReset): Backoff and retry
+    - Login page redirects: Treat as session expired
 
     Args:
         max_retries: Maximum number of retry attempts (default: 3)
@@ -123,24 +234,63 @@ def retry_on_429(max_retries: int = 3, backoff_delay: float = 15.0):
         def wrapper(*args, **kwargs):
             for attempt in range(max_retries + 1):
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+
+                    # Check if the response was a login redirect (session expired)
+                    # The function returns data, not the response directly,
+                    # so we handle redirects inside the scraping functions instead.
+                    return result
+
+                except requests.ConnectionError as e:
+                    # RemoteDisconnected, ConnectionResetError, etc.
+                    if attempt < max_retries:
+                        wait = backoff_delay * (attempt + 1)
+                        logger.warning(
+                            f"Connection error (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                            f"Waiting {wait:.0f}s before retry..."
+                        )
+                        time_module.sleep(wait)
+                        continue
+                    else:
+                        logger.error(f"Max retries ({max_retries}) exceeded for connection errors.")
+                        raise
+
                 except requests.HTTPError as e:
-                    if e.response.status_code == 429:
+                    status = e.response.status_code if e.response is not None else None
+
+                    if status == 429:
                         if attempt < max_retries:
                             logger.warning(
-                                f"429 Too Many Requests received (attempt {attempt + 1}/{max_retries + 1}). "
+                                f"429 Too Many Requests (attempt {attempt + 1}/{max_retries + 1}). "
                                 f"Waiting {backoff_delay}s before retry..."
                             )
                             time_module.sleep(backoff_delay)
                             continue
                         else:
-                            logger.error(f"Max retries ({max_retries}) exceeded for 429 errors. Giving up.")
+                            logger.error(f"Max retries ({max_retries}) exceeded for 429 errors.")
                             raise
+
+                    elif status == 403:
+                        if attempt < max_retries:
+                            logger.warning(
+                                f"403 Forbidden - session likely expired (attempt {attempt + 1}/{max_retries + 1}). "
+                                f"Attempting session refresh..."
+                            )
+                            new_cookies = refresh_hk33_session()
+                            if not new_cookies:
+                                logger.error("Session refresh failed. Cannot retry.")
+                                raise
+                            # Brief pause after re-login before retrying
+                            time_module.sleep(2.0)
+                            continue
+                        else:
+                            logger.error(f"Max retries ({max_retries}) exceeded for 403 errors.")
+                            raise
+
                     else:
-                        # Not a 429 error, raise immediately
                         raise
-                except Exception as e:
-                    # Non-HTTP errors, raise immediately
+
+                except Exception:
                     raise
 
         return wrapper
@@ -203,9 +353,9 @@ def load_hk33_cookies() -> dict:
 
 
 def get_browser_headers() -> dict:
-    """Return headers that mimic browser requests to avoid 403 errors."""
+    """Return headers that mimic browser requests with randomized User-Agent."""
     return {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": random.choice(_USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9,zh-TW;q=0.8,zh;q=0.7",
         "Accept-Encoding": "gzip, deflate, br",
@@ -352,7 +502,7 @@ def resolve_datetime_series(race_date: date, time_strings: list[str]) -> list[da
     return resolved_datetimes
 
 
-@retry_on_429(max_retries=3, backoff_delay=15.0)
+@retry_on_hk33_error(max_retries=3, backoff_delay=15.0)
 def scrape_hk33_hkjc_odds(session: HTTPSession, date_ymd: str, race_no: int, bet_type: str) -> list[dict]:
     """
     Scrape hkjc Win/Place odds from HK33.
@@ -381,28 +531,19 @@ def scrape_hk33_hkjc_odds(session: HTTPSession, date_ymd: str, race_no: int, bet
     resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT)
     resp.raise_for_status()
 
+    # Handle login redirect (session expired)
+    resp = _handle_login_redirect(resp, session, url)
+    if resp is None:
+        return []
+
     # Parse HTML to get raw records
     soup = BeautifulSoup(resp.text, "html.parser")
-    # Note: parse_odds_table uses ID='odds_table' for type='w'/'p' pages usually?
-    # Or 'discounts_table'?
-    # Based on observation, type=w uses 'odds_table' or similar structure.
-    # We'll use the generic parser which looks for robust attributes.
     records = parse_odds_table(soup, f"hkjc-{bet_type}")
 
     if not records:
         return []
 
-    # Default sort by existing order (implicit in list)
-    # Extract unique timestamps in order of appearance (row by row)
-    # But parse_odds_table returns a flat list of ALL cells.
-    # We need to rely on the fact that parse_odds_table processes ROW by ROW.
-    # So the list is ordered by time (groups of horses).
-
-    # We can reconstruct the time series.
-    # records[i]['timestamp_str']
-
-    # We need to map distinct timestamp_str -> datetime
-    # Preserve order of appearance
+    # Extract unique timestamps in order of appearance, resolve dates
     seen_timestamps = []
     seen_set = set()
     for r in records:
@@ -411,21 +552,13 @@ def scrape_hk33_hkjc_odds(session: HTTPSession, date_ymd: str, race_no: int, bet
             seen_timestamps.append(ts)
             seen_set.add(ts)
 
-    # Resolve dates
     resolved_dates = resolve_datetime_series(race_date, seen_timestamps)
     time_map = dict(zip(seen_timestamps, resolved_dates))
 
-    # Update records with resolved datetimes (replace timestamp_str with valid string or add object?)
-    # persistence.py expects 'timestamp_str' OR we can update persistence logic.
-    # Better: Update persistence.py to accept 'timestamp_obj'.
-    # For now, let's update 'timestamp_str' to be the full ISO format which convert_timestamp_to_datetime handles.
-
+    # Replace timestamp_str with full YYYY-MM-DD HH:MM:SS format for persistence layer
     for r in records:
         ts_str = r["timestamp_str"]
         if ts_str in time_map and time_map[ts_str]:
-            # Format as YYYY-MM-DD HH:MM:SS
-            # This ensures convert_timestamp_to_datetime (which now supports full format) works correctly
-            # without logic changes in persistence.py
             r["timestamp_str"] = time_map[ts_str].strftime("%Y-%m-%d %H:%M:%S")
             r["bet_type"] = bet_type
             r["source_url"] = url
@@ -596,7 +729,7 @@ def parse_hk33_odds_from_html(html: str, url: str, bet_type: str, data_type: str
     return results
 
 
-@retry_on_429(max_retries=3, backoff_delay=15.0)
+@retry_on_hk33_error(max_retries=3, backoff_delay=15.0)
 def scrape_hk33_offshore_market(session: HTTPSession, date_ymd: str, race_no: int, market_type: str) -> list[dict]:
     """
     Scrape offshore market Bet/Eat data from HK33 using HTTP.
@@ -637,88 +770,25 @@ def scrape_hk33_offshore_market(session: HTTPSession, date_ymd: str, race_no: in
     # Adaptive rate limiting
     _adaptive_rate_limiter.wait_if_needed(url)
 
-    # Load cookies
+    # Load and set cookies
     cookies = load_hk33_cookies()
+    for name, value in cookies.items():
+        session.cookies.set(name, value, domain="horse.hk33.com")
 
-    # Set cookies in session
-    if session.cookies is not None:
-        for name, value in cookies.items():
-            session.cookies.set(name, value, domain="horse.hk33.com")
-
-    # Fetch page with browser headers and cookies
+    # Fetch page
     resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT)
     resp.raise_for_status()
+
+    # Handle login redirect (session expired)
+    resp = _handle_login_redirect(resp, session, url)
+    if resp is None:
+        return []
 
     # Parse HTML
     results = parse_hk33_odds_from_html(resp.text, url, market_type, f"market-{market_type}")
 
     logger.info(f"Scraped {len(results)} {market_type} market records for race {race_no}")
     return results
-
-
-def scrape_hk33_race_all_types(
-    session: HTTPSession,
-    date_ymd: str,
-    race_no: int,
-    scrape_hkjc: bool = True,
-    scrape_market: bool = True,
-) -> dict:
-    """
-    Scrape all odds types for a single race using parallel requests.
-
-    Args:
-        session: HTTP session
-        date_ymd: Date in "YYYY/MM/DD" format
-        race_no: Race number
-        scrape_hkjc: Whether to scrape hkjc Win/Place odds
-        scrape_market: Whether to scrape offshore market data
-
-    Returns:
-        Dict with two keys:
-        {
-            'hkjc_data': [...],  # Combined Win + Place odds
-            'market_data': [...]  # Combined bet-w, bet-p, eat-w, eat-p data
-        }
-    """
-    hkjc_data = []
-    market_data = []
-
-    # Build list of scraping tasks
-    tasks = []
-
-    if scrape_hkjc:
-        tasks.append(("hkjc", "w"))
-        tasks.append(("hkjc", "p"))
-
-    if scrape_market:
-        for market_type in ["bet-w", "bet-p", "eat-w", "eat-p"]:
-            tasks.append(("market", market_type))
-
-    # Execute tasks in parallel (max 6 workers for 6 types)
-    with ThreadPoolExecutor(max_workers=config.MAX_HK33_ODDS_WORKERS) as executor:
-        future_to_task = {}
-
-        for task_type, odds_type in tasks:
-            if task_type == "hkjc":
-                future = executor.submit(scrape_hk33_hkjc_odds, session, date_ymd, race_no, odds_type)
-            else:  # market
-                future = executor.submit(scrape_hk33_offshore_market, session, date_ymd, race_no, odds_type)
-
-            future_to_task[future] = (task_type, odds_type)
-
-        # Collect results as they complete
-        for future in as_completed(future_to_task):
-            task_type, odds_type = future_to_task[future]
-            try:
-                result = future.result()
-                if task_type == "hkjc":
-                    hkjc_data.extend(result)
-                else:
-                    market_data.extend(result)
-            except Exception as e:
-                logger.error(f"Failed to scrape {task_type} {odds_type} for race {race_no}: {e}")
-
-    return {"hkjc_data": hkjc_data, "market_data": market_data}
 
 
 def scrape_hk33_meeting_by_type(
