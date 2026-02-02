@@ -298,9 +298,63 @@ def retry_on_hk33_error(max_retries: int = 3, backoff_delay: float = 15.0):
     return decorator
 
 
+def _pass_age_gate(cookie_dict: dict) -> dict:
+    """
+    Pass HK33 age verification gate if not already done.
+
+    The site requires POSTing action=set_18 to get an 'i_am_18_or_over' cookie,
+    otherwise pages return an empty shell with no data tables.
+
+    Args:
+        cookie_dict: Current cookies (must include PHPSESSID)
+
+    Returns:
+        Updated cookie dict with i_am_18_or_over added
+    """
+    if "i_am_18_or_over" in cookie_dict:
+        return cookie_dict
+
+    try:
+        session = requests.Session()
+        for name, value in cookie_dict.items():
+            session.cookies.set(name, value)
+
+        resp = session.post(
+            "https://horse.hk33.com/ajaj/landing.ajaj",
+            data={"action": "set_18"},
+            headers={
+                "User-Agent": random.choice(_USER_AGENTS),
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": "https://horse.hk33.com/",
+            },
+            timeout=10,
+        )
+
+        if resp.status_code == 200:
+            new_cookies = dict(session.cookies)
+            if "i_am_18_or_over" in new_cookies:
+                cookie_dict["i_am_18_or_over"] = new_cookies["i_am_18_or_over"]
+                logger.info("Passed HK33 age verification gate")
+            else:
+                # Set it manually as fallback — the server expects any truthy value
+                cookie_dict["i_am_18_or_over"] = "1"
+                logger.info("Set age gate cookie manually")
+        else:
+            logger.warning(f"Age gate POST returned {resp.status_code}, setting cookie manually")
+            cookie_dict["i_am_18_or_over"] = "1"
+
+    except Exception as e:
+        logger.warning(f"Failed to pass age gate: {e}, setting cookie manually")
+        cookie_dict["i_am_18_or_over"] = "1"
+
+    return cookie_dict
+
+
 def load_hk33_cookies() -> dict:
     """
     Load HK33 cookies from .hk33_cookies (JSON) or cookies.pkl (Selenium).
+    Ensures the age verification gate cookie is present.
 
     Returns:
         Dict of cookie name → value pairs
@@ -323,13 +377,11 @@ def load_hk33_cookies() -> dict:
             with open(json_file) as f:
                 _cookies = json.load(f)
             logger.info(f"Loaded {len(_cookies)} cookies from .hk33_cookies")
-            _cookies_loaded = True
-            return _cookies
         except Exception as e:
             logger.error(f"Failed to load cookies from .hk33_cookies: {e}")
 
     # Try Pickle file (selenium script)
-    if pickle_file.exists():
+    if not _cookies and pickle_file.exists():
         try:
             import pickle
 
@@ -339,17 +391,21 @@ def load_hk33_cookies() -> dict:
                 _cookies = {c["name"]: c["value"] for c in cookie_list if "name" in c and "value" in c}
 
             logger.info(f"Loaded {len(_cookies)} cookies from cookies.pkl")
-            _cookies_loaded = True
-            return _cookies
         except Exception as e:
             logger.error(f"Failed to load cookies from cookies.pkl: {e}")
 
-    logger.warning(
-        "No cookie file found (.hk33_cookies or cookies.pkl). HK33 scraping may fail with 403 errors. "
-        "Run extract_hk33_cookies.py or login script created."
-    )
+    if not _cookies:
+        logger.warning(
+            "No cookie file found (.hk33_cookies or cookies.pkl). HK33 scraping may fail with 403 errors. "
+            "Run extract_hk33_cookies.py or login script to create."
+        )
+
+    # Ensure age gate cookie is present
+    if _cookies:
+        _cookies = _pass_age_gate(_cookies)
+
     _cookies_loaded = True
-    return {}
+    return _cookies
 
 
 def get_browser_headers() -> dict:
@@ -593,8 +649,10 @@ def parse_odds_table(soup: BeautifulSoup, data_type: str) -> list[dict]:
         ]
     """
     try:
-        # 1. Try finding by ID first (most robust)
-        data_table = soup.find(id="discounts_table")
+        # 1. Try finding by known table IDs
+        #    - odds_table: used on jc-wp-trends-history (HKJC odds)
+        #    - discounts_table: used on offshore-market-trends-history (offshore market)
+        data_table = soup.find(id="odds_table") or soup.find(id="discounts_table")
 
         # 2. If not found by ID, try finding any table with 'data-race-num' attribute
         if not data_table:

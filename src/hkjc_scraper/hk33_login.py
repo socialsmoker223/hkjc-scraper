@@ -75,16 +75,39 @@ def login_hk33_requests() -> dict[str, str]:
             # Response might not be JSON; check cookies instead
             pass
 
-        # Step 3: Verify and save cookies
+        # Step 3: Verify cookies
         cookie_dict = dict(session.cookies)
 
         if "user_id" in cookie_dict or "PHPSESSID" in cookie_dict:
             logger.info(f"HK33 requests-based login successful ({len(cookie_dict)} cookies)")
 
+            # Step 4: Pass age verification gate
+            try:
+                session.post(
+                    "https://horse.hk33.com/ajaj/landing.ajaj",
+                    data={"action": "set_18"},
+                    headers={
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": "https://horse.hk33.com/",
+                    },
+                    timeout=10,
+                )
+                cookie_dict = dict(session.cookies)
+                if "i_am_18_or_over" in cookie_dict:
+                    logger.info("Passed age verification gate")
+                else:
+                    cookie_dict["i_am_18_or_over"] = "1"
+                    logger.info("Set age gate cookie manually")
+            except Exception as e:
+                logger.warning(f"Age gate POST failed: {e}, setting cookie manually")
+                cookie_dict["i_am_18_or_over"] = "1"
+
+            # Step 5: Save cookies
             cookie_file = Path(".hk33_cookies")
             with open(cookie_file, "w") as f:
                 json.dump(cookie_dict, f, indent=2)
-            logger.info(f"Saved cookies to {cookie_file}")
+            logger.info(f"Saved {len(cookie_dict)} cookies to {cookie_file}")
 
             return cookie_dict
         else:
