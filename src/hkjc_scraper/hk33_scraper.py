@@ -29,9 +29,10 @@ logger = logging.getLogger(__name__)
 # Hong Kong timezone
 HKT = pytz.timezone("Asia/Hong_Kong")
 
-# Cookie cache
+# Cookie cache (protected by _cookie_lock for thread safety)
 _cookies_loaded = False
 _cookies = {}
+_cookie_lock = Lock()
 
 # Session recovery: track re-login attempts per scraping session
 _relogin_count = 0
@@ -144,8 +145,9 @@ def refresh_hk33_session() -> dict[str, str]:
     logger.warning(f"Refreshing HK33 session (attempt {current_attempt}/{config.HK33_MAX_RELOGINS})...")
 
     # Clear cookie cache
-    _cookies_loaded = False
-    _cookies.clear()
+    with _cookie_lock:
+        _cookies_loaded = False
+        _cookies.clear()
 
     # Attempt requests-based login
     from hkjc_scraper.hk33_login import login_hk33_requests
@@ -153,8 +155,9 @@ def refresh_hk33_session() -> dict[str, str]:
     new_cookies = login_hk33_requests()
 
     if new_cookies:
-        _cookies.update(new_cookies)
-        _cookies_loaded = True
+        with _cookie_lock:
+            _cookies.update(new_cookies)
+            _cookies_loaded = True
         logger.info(f"HK33 session refreshed successfully ({len(new_cookies)} cookies)")
         return new_cookies
 
@@ -360,52 +363,37 @@ def load_hk33_cookies() -> dict:
         Dict of cookie name → value pairs
 
     Note:
-        Run extract_hk33_cookies.py to create the .hk33_cookies file,
-        OR run the selenium login script to create cookies.pkl.
+        Run hkjc-scraper --login-hk33 to create the .hk33_cookies file.
     """
     global _cookies_loaded, _cookies
 
-    if _cookies_loaded:
-        return _cookies
+    with _cookie_lock:
+        if _cookies_loaded:
+            return _cookies.copy()
 
-    # Try JSON file first (manual extraction)
-    json_file = Path(".hk33_cookies")
-    pickle_file = Path("cookies.pkl")
+        # Load from JSON cookie file
+        json_file = Path(".hk33_cookies")
 
-    if json_file.exists():
-        try:
-            with open(json_file) as f:
-                _cookies = json.load(f)
-            logger.info(f"Loaded {len(_cookies)} cookies from .hk33_cookies")
-        except Exception as e:
-            logger.error(f"Failed to load cookies from .hk33_cookies: {e}")
+        if json_file.exists():
+            try:
+                with open(json_file) as f:
+                    _cookies = json.load(f)
+                logger.info(f"Loaded {len(_cookies)} cookies from .hk33_cookies")
+            except Exception as e:
+                logger.error(f"Failed to load cookies from .hk33_cookies: {e}")
 
-    # Try Pickle file (selenium script)
-    if not _cookies and pickle_file.exists():
-        try:
-            import pickle
+        if not _cookies:
+            logger.warning(
+                "No cookie file found (.hk33_cookies). HK33 scraping may fail with 403 errors. "
+                "Run hkjc-scraper --login-hk33 to create."
+            )
 
-            with open(pickle_file, "rb") as f:
-                cookie_list = pickle.load(f)
-                # Convert list of dicts (Selenium) to key-value dict (Requests)
-                _cookies = {c["name"]: c["value"] for c in cookie_list if "name" in c and "value" in c}
+        # Ensure age gate cookie is present
+        if _cookies:
+            _cookies = _pass_age_gate(_cookies)
 
-            logger.info(f"Loaded {len(_cookies)} cookies from cookies.pkl")
-        except Exception as e:
-            logger.error(f"Failed to load cookies from cookies.pkl: {e}")
-
-    if not _cookies:
-        logger.warning(
-            "No cookie file found (.hk33_cookies or cookies.pkl). HK33 scraping may fail with 403 errors. "
-            "Run extract_hk33_cookies.py or login script to create."
-        )
-
-    # Ensure age gate cookie is present
-    if _cookies:
-        _cookies = _pass_age_gate(_cookies)
-
-    _cookies_loaded = True
-    return _cookies
+        _cookies_loaded = True
+        return _cookies.copy()
 
 
 def get_browser_headers() -> dict:

@@ -347,14 +347,15 @@ def main():
 
     # Run HK33 Login if requested
     if args.login_hk33:
-        logger.info("Starting HK33 automated login...")
-        from hkjc_scraper.hk33_login import perform_hk33_login
+        logger.info("Starting HK33 login...")
+        from hkjc_scraper.hk33_login import login_hk33_requests
 
-        if perform_hk33_login():
-            logger.info("Login process completed successfully.")
+        cookies = login_hk33_requests()
+        if cookies:
+            logger.info("Login completed successfully.")
             sys.exit(0)
         else:
-            logger.error("Login process failed.")
+            logger.error("Login failed.")
             sys.exit(1)
 
     # Determine dates to scrape
