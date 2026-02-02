@@ -52,12 +52,12 @@ class Config:
 
     # Scraping settings
     HKJC_BASE_URL = os.getenv("HKJC_BASE_URL", "https://racing.hkjc.com/racing/information/Chinese")
-    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
-    REQUEST_CONNECT_TIMEOUT = int(os.getenv("REQUEST_CONNECT_TIMEOUT", "5"))
+    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
+    REQUEST_CONNECT_TIMEOUT = int(os.getenv("REQUEST_CONNECT_TIMEOUT", "10"))
     RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))
 
     # Error handling & retry settings
-    RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
+    RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "5"))
     RETRY_BACKOFF_BASE = int(os.getenv("RETRY_BACKOFF_BASE", "2"))
     RATE_LIMIT_RACE = float(os.getenv("RATE_LIMIT_RACE", "0.3"))  # Reduced for concurrent execution
     RATE_LIMIT_DETAIL = float(os.getenv("RATE_LIMIT_DETAIL", "0.2"))  # Reduced for concurrent execution
@@ -68,13 +68,22 @@ class Config:
 
     # HK33 scraping settings
     HK33_BASE_URL = "https://horse.hk33.com/analysis"
-    RATE_LIMIT_HK33 = float(os.getenv("RATE_LIMIT_HK33", "0.5"))
     HK33_REQUEST_TIMEOUT = int(os.getenv("HK33_REQUEST_TIMEOUT", "30"))
     HK33_EMAIL = os.getenv("HK33_EMAIL", "")
     HK33_PASSWORD = os.getenv("HK33_PASSWORD", "")
 
+    # HK33 session recovery
+    HK33_MAX_RELOGINS = int(os.getenv("HK33_MAX_RELOGINS", "3"))
+    HK33_LOGIN_URL = "https://www.hk33.com/zh-yue/user-ajaj/user.login.ajaj"
+
+    # HK33 adaptive rate limiting
+    RATE_LIMIT_HK33_SAME_PATH = float(os.getenv("RATE_LIMIT_HK33_SAME_PATH", "0.3"))  # Same endpoint, different params
+    RATE_LIMIT_HK33_PATH_CHANGE = float(os.getenv("RATE_LIMIT_HK33_PATH_CHANGE", "15.0"))  # Different endpoint
+
     # HK33 concurrency settings
-    MAX_HK33_RACE_WORKERS = int(os.getenv("MAX_HK33_RACE_WORKERS", "4"))  # Concurrent HK33 race scraping
+    MAX_HK33_RACE_WORKERS = int(
+        os.getenv("MAX_HK33_RACE_WORKERS", "2")
+    )  # Concurrent HK33 race scraping (reduced to avoid 429)
     MAX_HK33_ODDS_WORKERS = int(os.getenv("MAX_HK33_ODDS_WORKERS", "6"))  # Concurrent odds type scraping per race
 
     # Logging settings

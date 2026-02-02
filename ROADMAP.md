@@ -12,7 +12,7 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
 - ✅ **HK33 Odds Scraping** (hk33_scraper.py) - Fully implemented
   - Time-series HKJC win/place odds
   - Offshore market odds (Bet/Eat prices)
-  - Cookie-based authentication bypassing 403 blocks
+  - Requests-based auto-login with session recovery on 403
 - ✅ **Sectional time extraction** (DisplaySectionalTime.aspx in hkjc_scraper.py) - Fully implemented
   - Per-section performance for each horse
   - Section positions, margins, and split times
@@ -65,8 +65,10 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
   - Updated persistence logic to handle this composite key
 - ✅ **HK33 Odds Integration - FULLY IMPLEMENTED** (2026-01-17)
   - New tables: `hkjc_odds` and `offshore_market`
-  - Browser-based cookie extraction for authentication
-  - Automated login via Selenium (optional)
+  - Requests-based auto-login (no browser/Selenium required)
+  - Automatic session recovery on 403 with re-login
+  - Adaptive rate limiting, UA rotation, and request jitter
+  - By-type scraping strategy for optimal performance
   - Integration with main CLI via `--scrape-hk33` flag
 
 **❌ What's Missing:**
@@ -433,7 +435,8 @@ Your HKJC horse racing data scraper is a **production-ready system (≈98% compl
 - [x] **HK33 Odds Data** ✅ (Implemented 2026-01-17)
   - [x] HKJC Win/Place time-series
   - [x] Offshore market (Blue/Red prices)
-  - [x] Cookie-based authentication
+  - [x] Requests-based auto-login and session recovery
+  - [x] Adaptive rate limiting and anti-bot evasion
 - [ ] **Scrape additional HKJC pages**
   - [ ] Dividends page (WIN/PLA/QIN/QPL/TCE/TRI/F-F/Quartet pools)
   - [ ] Track work times (gallop times between races)
