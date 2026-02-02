@@ -60,11 +60,11 @@ hkjc-scraper --date-range 2025/12/01 2025/12/31   # Scrape date range
 hkjc-scraper --backfill 2024/01/01 2024/12/31     # Backfill historical data
 hkjc-scraper --update                             # Update from last DB entry to today
 
-# HK33 Odds Scraping (Requires .hk33_cookies or cookies.pkl)
+# HK33 Odds Scraping (Requires .hk33_cookies)
 hkjc-scraper 2026/01/14 --scrape-hk33             # Scrape HKJC and Offshore odds
 hkjc-scraper 2026/01/14 --scrape-hk33-odds        # HKJC Win/Place odds only
 hkjc-scraper 2026/01/14 --scrape-hk33-market      # Offshore market only
-hkjc-scraper --login-hk33                         # Selenium auto-login (refresh cookies)
+hkjc-scraper --login-hk33                         # Auto-login via requests (refresh cookies)
 ```
 
 ### Code Quality
@@ -88,6 +88,9 @@ src/hkjc_scraper/
 ├── cli.py              - CLI interface with argparse (console scripts entry point)
 ├── config.py           - Configuration management using environment variables (.env)
 ├── database.py         - Database connection setup and table initialization
+├── hk33_login.py       - HK33 requests-based login and cookie management
+├── hk33_scraper.py     - HK33 odds scraping (HKJC + offshore market)
+├── http_utils.py       - HTTP session, retry logic, rate limiting
 ├── models.py           - SQLAlchemy ORM models (9 tables with full relationships)
 ├── persistence.py      - Data persistence layer with UPSERT operations
 └── scraper.py          - Web scraping functions for HKJC website
@@ -136,7 +139,6 @@ See `data_model.md` for detailed schema documentation (in Traditional Chinese).
    - `list_race_urls_for_meeting_all_courses()` - Discovers all races for a date from ResultsAll.aspx
    - `parse_localresults()` - Extracts race header + runner data from LocalResults.aspx
    - `parse_sectional_times()` - Extracts sectional data from DisplaySectionalTime.aspx
-   - `parse_sectional_times()` - Extracts sectional data from DisplaySectionalTime.aspx
    - `scrape_horse_profile()` - Extracts horse profile from Horse.aspx (21 fields)
    - `scrape_hk33_odds()` - Extracts odds from HK33.com using cookies (hk33_scraper.py)
 
@@ -153,7 +155,7 @@ See `data_model.md` for detailed schema documentation (in Traditional Chinese).
    - Calls scraper functions for each date
    - Batches data by race
    - Calls persistence layer
-   - Commits per race (not per meeting)
+   - Commits per meeting (batched transactions)
    - Shows progress bars for multi-date operations
 
 ### Important Patterns
@@ -224,8 +226,7 @@ HKJC uses URLs with IDs like `JockeyId=MDLR&...` or `HorseId=HK_2023_J344`. The 
   - ❌ No pytest unit/integration tests for scraping functions yet
 
 **Known Limitations:**
-- No concurrent scraping (sequential only, could be optimized with async)
-- Commit granularity is per-race (could batch by meeting)
+- No async scraping (uses ThreadPoolExecutor for concurrency)
 - No pytest unit/integration tests for scraping functions
 
 **Next Priority: Comprehensive Test Suite (Phase 5)**
@@ -276,15 +277,14 @@ HK33_EMAIL=your_email@example.com
 HK33_PASSWORD=your_password
 
 # HK33 Rate Limiting & Timeouts
-RATE_LIMIT_HK33=0.5              # Delay between requests (seconds)
-HK33_REQUEST_TIMEOUT=30          # Request timeout (seconds)
+HK33_REQUEST_TIMEOUT=30                  # Request timeout (seconds)
+RATE_LIMIT_HK33_SAME_PATH=0.3           # Delay for same endpoint (seconds)
+RATE_LIMIT_HK33_PATH_CHANGE=15.0        # Delay when switching bet types (seconds)
 
-# HK33 Concurrency Settings
-MAX_HK33_RACE_WORKERS=4          # Concurrent race scraping
-MAX_HK33_ODDS_WORKERS=6          # Concurrent odds type scraping per race
+# HK33 Concurrency & Session Recovery
+MAX_HK33_RACE_WORKERS=2                 # Concurrent race scraping per bet type
+HK33_MAX_RELOGINS=3                     # Max auto re-login attempts per session
 ```
-
-See `HK33_BROWSER_SCRAPING.md` for cookie extraction guide.
 
 Default values work with Docker setup. Copy `.env.example` to get started.
 
@@ -306,8 +306,8 @@ Default values work with Docker setup. Copy `.env.example` to get started.
 - HKJC site structure may change (scraper uses BeautifulSoup with CSS selectors)
 
 **HK33 scraping errors:**
-- Error 403 Forbidden: Cookies expired, run `python extract_hk33_cookies.py` or `hkjc-scraper --login-hk33`
-- Missing .hk33_cookies: Extract cookies from browser (see HK33_BROWSER_SCRAPING.md)
+- Error 403 Forbidden: Session expired. Scraper auto-recovers via re-login (up to `HK33_MAX_RELOGINS` attempts). Manual fix: `hkjc-scraper --login-hk33`
+- Missing .hk33_cookies: Set `HK33_EMAIL` and `HK33_PASSWORD` in `.env`, then run `hkjc-scraper --login-hk33`
 
 **uv issues:**
 - Clear cache: `uv cache clean`

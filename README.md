@@ -26,6 +26,9 @@ hkjc-scraper/
 │       ├── cli.py               # CLI interface with argparse
 │       ├── config.py            # Configuration management
 │       ├── database.py          # Database connection and initialization
+│       ├── hk33_login.py        # HK33 requests-based login and cookie management
+│       ├── hk33_scraper.py      # HK33 odds scraping (HKJC + offshore market)
+│       ├── http_utils.py        # HTTP session, retry logic, rate limiting
 │       ├── models.py            # SQLAlchemy ORM models (9 tables)
 │       ├── persistence.py       # Data persistence layer (UPSERT operations)
 │       └── scraper.py           # Web scraping functions
@@ -291,7 +294,7 @@ HK33 Odds Scraping (Requires .hk33_cookies):
   --scrape-hk33           Scrape both HKJC odds AND offshore market
   --scrape-hk33-odds      Scrape ONLY HKJC Win/Place odds
   --scrape-hk33-market    Scrape ONLY offshore market data
-  --login-hk33            Run Selenium auto-login to refresh cookies
+  --login-hk33            Auto-login via requests to refresh cookies
 ```
 
 ## Database Management
@@ -420,10 +423,11 @@ LOG_FILE=hkjc_scraper.log   # Path to log file
 ```env
 HK33_EMAIL=your_email@example.com
 HK33_PASSWORD=your_password
-RATE_LIMIT_HK33=0.5
 HK33_REQUEST_TIMEOUT=30
-MAX_HK33_RACE_WORKERS=4
-MAX_HK33_ODDS_WORKERS=6
+RATE_LIMIT_HK33_SAME_PATH=0.3       # Delay for same endpoint (seconds)
+RATE_LIMIT_HK33_PATH_CHANGE=15.0    # Delay when switching bet types (seconds)
+MAX_HK33_RACE_WORKERS=2             # Concurrent race scraping per bet type
+HK33_MAX_RELOGINS=3                 # Max auto re-login attempts per session
 ```
 
 **Console vs File Output:**
@@ -483,7 +487,10 @@ See `HORSE_PROFILE_IMPLEMENTATION.md` for implementation details.
 Use `--scrape-hk33` flag to enable:
 - HKJC Win/Place odds (time-series)
 - Offshore Market odds (Bet/Eat prices) for arbitrage analysis
-- Requires cookie authentication (see `HK33_BROWSER_SCRAPING.md`)
+- Auto-login via requests (set `HK33_EMAIL` and `HK33_PASSWORD` in `.env`)
+- Automatic session recovery on 403 errors with re-login
+- Adaptive rate limiting with by-type scraping strategy
+- User-Agent rotation and request jitter for anti-bot evasion
 
 ## Development
 
@@ -522,10 +529,12 @@ uv run mypy .
 
 ### Project Structure Best Practices
 
-- Keep scraping logic in `hkjc_scraper.py`
+- HKJC scraping logic in `scraper.py`
+- HK33 odds scraping in `hk33_scraper.py`
+- HK33 login/cookies in `hk33_login.py`
 - Database operations in `persistence.py`
 - ORM models in `models.py`
-- CLI interface in `main.py`
+- CLI interface in `cli.py`
 - Configuration in `config.py`
 
 ## Troubleshooting
@@ -577,12 +586,12 @@ uv run mypy .
 
 **Error: `403 Forbidden` from HK33.com**
 - Cookies expired or invalid
-- Solution: Extract new cookies using `python extract_hk33_cookies.py`
-- Or: Run `hkjc-scraper --login-hk33` for automated login
+- Session expired: scraper auto-recovers with re-login (up to `HK33_MAX_RELOGINS` attempts)
+- Manual fix: Run `hkjc-scraper --login-hk33` to refresh cookies
 
 **Error: `Missing .hk33_cookies file`**
 - Cookie file not found
-- Solution: Follow cookie extraction guide in HK33_BROWSER_SCRAPING.md
+- Solution: Set `HK33_EMAIL` and `HK33_PASSWORD` in `.env`, then run `hkjc-scraper --login-hk33`
 
 **HK33 data not appearing in database**
 - Check if --scrape-hk33 flag was used
