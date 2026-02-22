@@ -88,6 +88,7 @@ src/hkjc_scraper/
 ├── cli.py              - CLI interface with argparse (console scripts entry point)
 ├── config.py           - Configuration management using environment variables (.env)
 ├── database.py         - Database connection setup and table initialization
+├── exceptions.py       - Custom exception hierarchy (HKJCScraperError, NetworkError, ParseError)
 ├── hk33_login.py       - HK33 requests-based login and cookie management
 ├── hk33_scraper.py     - HK33 odds scraping (HKJC + offshore market)
 ├── http_utils.py       - HTTP session, retry logic, rate limiting
@@ -220,17 +221,20 @@ HKJC uses URLs with IDs like `JockeyId=MDLR&...` or `HorseId=HK_2023_J344`. The 
   - ✅ HK33 Odds Integration (Phase 6 features brought forward)
   - ❌ Missing: Scheduling/automation (cron, APScheduler)
 
-- Phase 5 (Testing & Quality): ⏳ 30% IN PROGRESS
+- Phase 5 (Testing & Quality): ⏳ 50% IN PROGRESS
   - ✅ Tooling configured: pytest, mypy, ruff, pre-commit
-  - ✅ Tests directory created
-  - ❌ No pytest unit/integration tests for scraping functions yet
+  - ✅ Tests directory with rollback-safe PostgreSQL fixture (`conftest.py`)
+  - ✅ `test_error_handling.py` - error handling in scraper and persistence layers
+  - ✅ `test_http_utils.py` - retry logic, rate limiting, session management
+  - ✅ `test_persistence_merge.py` - upsert edge cases (minimal dicts, merge behaviour)
+  - ❌ No pytest tests for core scraper functions (`scraper.py`, `hk33_scraper.py`)
 
 **Known Limitations:**
 - No async scraping (uses ThreadPoolExecutor for concurrency)
-- No pytest unit/integration tests for scraping functions
+- No pytest tests for core scraper functions (`scraper.py`, `hk33_scraper.py`)
 
-**Next Priority: Comprehensive Test Suite (Phase 5)**
-Write pytest unit and integration tests for scraping functions to achieve better test coverage.
+**Next Priority: Scraper Function Test Suite (Phase 5)**
+Write pytest unit tests for `scraper.py` and `hk33_scraper.py` using HTML fixtures to achieve full test coverage.
 
 See `ROADMAP.md` for complete development plan and feature list.
 

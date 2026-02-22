@@ -187,14 +187,14 @@ def parse_horse_link(a_tag):
     """
     href = a_tag.get("href") or ""
     full = urljoin("https://racing.hkjc.com", href)
-    m_id = re.search(r"horseid=(HK_\d+_[A-Z0-9]+)", href)
+    m_id = re.search(r"horseid=(HK_\d+_[A-Z0-9]+)", href, re.IGNORECASE)
     hkjc_horse_id = m_id.group(1) if m_id else None
     return hkjc_horse_id, full
 
 
 def parse_jockey_link(a_tag):
     href = a_tag.get("href") or ""
-    m = re.search(r"jockeyid=([A-Z0-9]+)", href)
+    m = re.search(r"jockeyid=([A-Z0-9]+)", href, re.IGNORECASE)
     code = m.group(1) if m else None
     name_cn = a_tag.get_text(strip=True)
     return code, name_cn
@@ -202,7 +202,7 @@ def parse_jockey_link(a_tag):
 
 def parse_trainer_link(a_tag):
     href = a_tag.get("href") or ""
-    m = re.search(r"trainerid=([A-Z0-9]+)", href)
+    m = re.search(r"trainerid=([A-Z0-9]+)", href, re.IGNORECASE)
     code = m.group(1) if m else None
     name_cn = a_tag.get_text(strip=True)
     return code, name_cn

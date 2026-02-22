@@ -1,7 +1,33 @@
 from sqlalchemy import select
 
 from hkjc_scraper.models import Horse, HorseHistory
-from hkjc_scraper.persistence import save_race_data
+from hkjc_scraper.persistence import save_race_data, upsert_meeting
+
+
+def test_upsert_meeting_minimal_dict(test_db_session):
+    """upsert_meeting with only conflict keys should not raise ValueError."""
+    meeting = upsert_meeting(test_db_session, {"date": "2025/06/01", "venue_code": "ST"})
+    assert meeting is not None
+    assert meeting.id is not None
+    # Calling again must not raise
+    meeting2 = upsert_meeting(test_db_session, {"date": "2025/06/01", "venue_code": "ST"})
+    assert meeting2.id == meeting.id
+
+
+def test_save_race_data_with_missing_horse_name_cn(test_db_session):
+    """save_race_data should not KeyError when horse_name_cn is None on runners."""
+    data = {
+        "meeting": {"date": "2025/07/01", "venue_code": "HV"},
+        "race": {"race_no": 1},
+        "horses": [{"code": "K001", "name_cn": "測試馬K", "hkjc_horse_id": "HK_2025_K001"}],
+        "jockeys": [],
+        "trainers": [],
+        "runners": [{"horse_code": "K001", "horse_name_cn": None}],
+        "horse_sectionals": [],
+    }
+    # Should not raise KeyError
+    save_race_data(test_db_session, data)
+    test_db_session.flush()
 
 
 def test_save_race_data_merges_profile(test_db_session):

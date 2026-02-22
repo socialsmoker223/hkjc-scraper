@@ -7,21 +7,32 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from hkjc_scraper.config import config
 from hkjc_scraper.models import Base
 
 
-@pytest.fixture
-def test_db_session():
-    """Create in-memory SQLite database for testing"""
-    engine = create_engine("sqlite:///:memory:")
+@pytest.fixture(scope="session")
+def pg_engine():
+    """Single PostgreSQL engine for the test session."""
+    engine = create_engine(config.get_db_url())
     Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def test_db_session(pg_engine):
+    """PostgreSQL session that rolls back after each test — no persistent state."""
+    connection = pg_engine.connect()
+    transaction = connection.begin()
+    Session = sessionmaker(bind=connection)
     session = Session()
 
     yield session
 
     session.close()
-    engine.dispose()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture
