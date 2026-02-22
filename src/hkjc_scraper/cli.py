@@ -232,7 +232,6 @@ def scrape_and_save_hk33_meeting(db, date_obj, meeting_data, session, scrape_odd
                 logger.debug(f"HK33 Race {race_no}: {result['hkjc_saved']} hkjc, {result['offshore_saved']} offshore")
 
             except Exception as e:
-                meeting_db.rollback()
                 logger.error(f"Failed to save HK33 data for race {race_no}: {e}")
                 continue
 

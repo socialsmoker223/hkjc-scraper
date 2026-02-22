@@ -356,7 +356,7 @@ def _pass_age_gate(cookie_dict: dict) -> dict:
 
 def load_hk33_cookies() -> dict:
     """
-    Load HK33 cookies from .hk33_cookies (JSON) or cookies.pkl (Selenium).
+    Load HK33 cookies from .hk33_cookies (JSON).
     Ensures the age verification gate cookie is present.
 
     Returns:
