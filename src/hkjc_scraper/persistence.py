@@ -102,13 +102,27 @@ def upsert_meeting(db: Session, meeting_data: dict[str, Any]) -> Meeting:
 
     # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
     stmt = insert(Meeting).values(clean_data)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["date", "venue_code"],
-        set_={k: v for k, v in clean_data.items() if k not in ["date", "venue_code"]},
-    ).returning(Meeting)
-
-    result = db.execute(stmt)
-    return result.scalar_one()
+    set_dict = {k: v for k, v in clean_data.items() if k not in ["date", "venue_code"]}
+    if set_dict:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["date", "venue_code"],
+            set_=set_dict,
+        ).returning(Meeting)
+        return db.execute(stmt).scalar_one()
+    else:
+        # Input has only the conflict keys — nothing to update on conflict
+        stmt = stmt.on_conflict_do_nothing().returning(Meeting)
+        result = db.execute(stmt).scalar_one_or_none()
+        if result is None:
+            # Row already existed; fetch it
+            result = db.execute(
+                select(Meeting).where(
+                    Meeting.date == clean_data["date"],
+                    Meeting.venue_code == clean_data["venue_code"],
+                )
+            ).scalar_one()
+        db.flush()
+        return result
 
 
 def upsert_race(db: Session, race_data: dict[str, Any]) -> Race:
