@@ -566,13 +566,11 @@ def scrape_hk33_hkjc_odds(session: HTTPSession, date_ymd: str, race_no: int, bet
     # Adaptive rate limiting
     _adaptive_rate_limiter.wait_if_needed(url)
 
-    # Load and set cookies
+    # Load cookies and pass per-request (thread-safe — avoids mutating shared session)
     cookies = load_hk33_cookies()
-    for name, value in cookies.items():
-        session.cookies.set(name, value, domain="horse.hk33.com")
 
     # Fetch page
-    resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT)
+    resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT, cookies=cookies)
     resp.raise_for_status()
 
     # Handle login redirect (session expired)
@@ -816,13 +814,11 @@ def scrape_hk33_offshore_market(session: HTTPSession, date_ymd: str, race_no: in
     # Adaptive rate limiting
     _adaptive_rate_limiter.wait_if_needed(url)
 
-    # Load and set cookies
+    # Load cookies and pass per-request (thread-safe — avoids mutating shared session)
     cookies = load_hk33_cookies()
-    for name, value in cookies.items():
-        session.cookies.set(name, value, domain="horse.hk33.com")
 
     # Fetch page
-    resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT)
+    resp = session.get(url, headers=get_browser_headers(), timeout=config.HK33_REQUEST_TIMEOUT, cookies=cookies)
     resp.raise_for_status()
 
     # Handle login redirect (session expired)
