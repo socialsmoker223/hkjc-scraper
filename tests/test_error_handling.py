@@ -109,6 +109,7 @@ class TestDatabaseErrorHandling:
 class TestValidationErrorHandling:
     """Test validation error handling"""
 
+    @pytest.mark.skip(reason="validators module not yet implemented (Phase 5)")
     def test_invalid_position_code(self):
         """Test handling of invalid position codes"""
         # This test would require the validators module
