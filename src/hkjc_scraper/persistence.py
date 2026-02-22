@@ -28,6 +28,36 @@ from hkjc_scraper.models import (
 
 logger = logging.getLogger(__name__)
 
+# Fields valid for horse history snapshots
+_HORSE_HISTORY_VALID_FIELDS = {
+    "code",
+    "name_cn",
+    "name_en",
+    "hkjc_horse_id",
+    "profile_url",
+    "origin",
+    "age",
+    "colour",
+    "sex",
+    "import_type",
+    "season_prize_hkd",
+    "lifetime_prize_hkd",
+    "record_wins",
+    "record_seconds",
+    "record_thirds",
+    "record_starts",
+    "last10_starts",
+    "current_location",
+    "current_location_date",
+    "import_date",
+    "owner_name",
+    "current_rating",
+    "season_start_rating",
+    "sire_name",
+    "dam_name",
+    "dam_sire_name",
+}
+
 # ============================================================================
 # Database retry decorator for timeout and connection errors
 # ============================================================================
@@ -552,34 +582,7 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
 
         # 3b. Batch insert horse history for horses with profile data
         history_batch = []
-        history_valid_fields = {
-            "code",
-            "name_cn",
-            "name_en",
-            "hkjc_horse_id",
-            "profile_url",
-            "origin",
-            "age",
-            "colour",
-            "sex",
-            "import_type",
-            "season_prize_hkd",
-            "lifetime_prize_hkd",
-            "record_wins",
-            "record_seconds",
-            "record_thirds",
-            "record_starts",
-            "last10_starts",
-            "current_location",
-            "current_location_date",
-            "import_date",
-            "owner_name",
-            "current_rating",
-            "season_start_rating",
-            "sire_name",
-            "dam_name",
-            "dam_sire_name",
-        }
+        history_valid_fields = _HORSE_HISTORY_VALID_FIELDS
         captured_at = datetime.now()
         for horse_data in race_data["horses"]:
             if horse_data.get("origin") or horse_data.get("current_rating"):
@@ -739,34 +742,7 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
         horse_map = batch_upsert_horses(db, all_horses)  # {(code, name_cn): horse_id}
 
         # 4. Horse history batch (append-only)
-        history_valid_fields = {
-            "code",
-            "name_cn",
-            "name_en",
-            "hkjc_horse_id",
-            "profile_url",
-            "origin",
-            "age",
-            "colour",
-            "sex",
-            "import_type",
-            "season_prize_hkd",
-            "lifetime_prize_hkd",
-            "record_wins",
-            "record_seconds",
-            "record_thirds",
-            "record_starts",
-            "last10_starts",
-            "current_location",
-            "current_location_date",
-            "import_date",
-            "owner_name",
-            "current_rating",
-            "season_start_rating",
-            "sire_name",
-            "dam_name",
-            "dam_sire_name",
-        }
+        history_valid_fields = _HORSE_HISTORY_VALID_FIELDS
         captured_at = datetime.now()
         history_batch: list[dict[str, Any]] = []
         # Deduplicate history by hkjc_horse_id (same horse across races → one snapshot)

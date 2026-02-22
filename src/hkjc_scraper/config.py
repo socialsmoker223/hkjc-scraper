@@ -84,7 +84,6 @@ class Config:
     MAX_HK33_RACE_WORKERS = int(
         os.getenv("MAX_HK33_RACE_WORKERS", "2")
     )  # Concurrent HK33 race scraping (reduced to avoid 429)
-    MAX_HK33_ODDS_WORKERS = int(os.getenv("MAX_HK33_ODDS_WORKERS", "6"))  # Concurrent odds type scraping per race
 
     # Logging settings
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
