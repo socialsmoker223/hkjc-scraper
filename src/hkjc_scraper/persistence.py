@@ -139,13 +139,25 @@ def upsert_race(db: Session, race_data: dict[str, Any]) -> Race:
     """
     # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
     stmt = insert(Race).values(race_data)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["meeting_id", "race_no"],
-        set_={k: v for k, v in race_data.items() if k not in ["meeting_id", "race_no"]},
-    ).returning(Race)
-
-    result = db.execute(stmt)
-    return result.scalar_one()
+    set_dict = {k: v for k, v in race_data.items() if k not in ["meeting_id", "race_no"]}
+    if set_dict:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["meeting_id", "race_no"],
+            set_=set_dict,
+        ).returning(Race)
+        return db.execute(stmt).scalar_one()
+    else:
+        stmt = stmt.on_conflict_do_nothing().returning(Race)
+        result = db.execute(stmt).scalar_one_or_none()
+        if result is None:
+            result = db.execute(
+                select(Race).where(
+                    Race.meeting_id == race_data["meeting_id"],
+                    Race.race_no == race_data["race_no"],
+                )
+            ).scalar_one()
+        db.flush()
+        return result
 
 
 def check_meeting_exists(db: Session, race_date: date) -> bool:
@@ -379,10 +391,10 @@ def upsert_horse_sectional(db: Session, sectional_data: dict[str, Any]) -> Horse
 # ============================================================================
 
 
-def batch_upsert_horses(db: Session, horse_list: list[dict[str, Any]]) -> dict[tuple[str, str | None], int]:
+def batch_upsert_horses(db: Session, horse_list: list[dict[str, Any]]) -> dict[str, int]:
     """
     批量插入或更新馬匹 (使用 PostgreSQL ON CONFLICT)
-    Batch upsert horses. Returns mapping of (code, name_cn) -> horse_id.
+    Batch upsert horses. Returns mapping of code -> horse_id.
     """
     if not horse_list:
         return {}
@@ -401,7 +413,7 @@ def batch_upsert_horses(db: Session, horse_list: list[dict[str, Any]]) -> dict[t
     ).returning(Horse.id, Horse.code, Horse.name_cn)
 
     rows = db.execute(stmt).all()
-    return {(row.code, row.name_cn): row.id for row in rows}
+    return {row.code: row.id for row in rows}
 
 
 def batch_insert_horse_history(db: Session, history_list: list[dict[str, Any]]) -> int:
@@ -600,7 +612,7 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
         captured_at = datetime.now()
         for horse_data in race_data["horses"]:
             if horse_data.get("origin") or horse_data.get("current_rating"):
-                h_key = (horse_data["code"], horse_data.get("name_cn"))
+                h_key = horse_data["code"]
                 horse_id = horse_map.get(h_key)
                 if horse_id:
                     history_record = {"horse_id": horse_id, "captured_at": captured_at}
@@ -622,7 +634,7 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
             runner_dict = runner_data.copy()
             runner_dict["race_id"] = race.id
 
-            h_key = (runner_data["horse_code"], runner_data.get("horse_name_cn"))
+            h_key = runner_data["horse_code"]
             runner_dict["horse_id"] = horse_map[h_key]
 
             runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_name_cn"))
@@ -648,9 +660,7 @@ def save_race_data(db: Session, race_data: dict[str, Any]) -> dict[str, Any]:
         for sectional_data in race_data.get("horse_sectionals", []):
             sectional_dict = sectional_data.copy()
 
-            horse_code = sectional_data["horse_code"]
-            horse_name_cn = sectional_data.get("horse_name_cn")
-            h_key = (horse_code, horse_name_cn)
+            h_key = sectional_data["horse_code"]
 
             horse_id = horse_map[h_key]
             runner_id = runner_id_map[horse_id]
@@ -767,7 +777,7 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
                 continue
             seen_history_horses.add(hkjc_id)
 
-            h_key = (horse_data["code"], horse_data.get("name_cn"))
+            h_key = horse_data["code"]
             horse_id = horse_map.get(h_key)
             if horse_id:
                 history_record: dict[str, Any] = {"horse_id": horse_id, "captured_at": captured_at}
@@ -789,7 +799,7 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
             runner_dict = runner_data.copy()
             runner_dict["race_id"] = race_map[race_no]
 
-            h_key = (runner_data["horse_code"], runner_data.get("horse_name_cn"))
+            h_key = runner_data["horse_code"]
             runner_dict["horse_id"] = horse_map[h_key]
             runner_dict["jockey_id"] = jockey_map.get(runner_data.get("jockey_name_cn"))
             runner_dict["trainer_id"] = trainer_map.get(runner_data.get("trainer_name_cn"))
@@ -819,9 +829,7 @@ def save_meeting_data(db: Session, meeting_data: list[dict[str, Any]]) -> dict[s
             sectional_dict = sectional_data.copy()
             race_id = race_map[race_no]
 
-            horse_code = sectional_data["horse_code"]
-            horse_name_cn = sectional_data.get("horse_name_cn")
-            h_key = (horse_code, horse_name_cn)
+            h_key = sectional_data["horse_code"]
 
             horse_id = horse_map[h_key]
             runner_id = runner_id_map[(race_id, horse_id)]
