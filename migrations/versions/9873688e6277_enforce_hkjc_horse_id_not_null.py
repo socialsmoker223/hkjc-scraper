@@ -7,6 +7,7 @@ Create Date: 2026-02-23 16:38:11.097912
 """
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -17,8 +18,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column("horse", "hkjc_horse_id", nullable=False)
+    # Pre-condition: verified 0 NULL rows in horse.hkjc_horse_id before applying
+    op.alter_column("horse", "hkjc_horse_id", existing_type=sa.VARCHAR(32), nullable=False)
 
 
 def downgrade() -> None:
-    op.alter_column("horse", "hkjc_horse_id", nullable=True)
+    op.alter_column("horse", "hkjc_horse_id", existing_type=sa.VARCHAR(32), nullable=True)
