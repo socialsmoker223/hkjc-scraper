@@ -107,7 +107,7 @@ class Horse(Base):
     code: Mapped[str] = mapped_column(VARCHAR(16), nullable=False)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
-    hkjc_horse_id: Mapped[Optional[str]] = mapped_column(VARCHAR(32), unique=True)
+    hkjc_horse_id: Mapped[str] = mapped_column(VARCHAR(32), nullable=False, unique=True)
     profile_url: Mapped[Optional[str]] = mapped_column(TEXT)
 
     # Merged profile fields
