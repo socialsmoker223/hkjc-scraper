@@ -856,7 +856,7 @@ def scrape_meeting(date_ymd: str, scrape_profiles: bool = True):
             logger.info(f"Scraping {len(all_horses_to_scrape)} horse profiles concurrently...")
 
             # gear_map: hkjc_horse_id -> {race_code -> gear_str}
-            gear_map: dict = {}
+            gear_map: dict[str, dict[int, str | None]] = {}
 
             with ThreadPoolExecutor(max_workers=config.MAX_PROFILE_WORKERS) as executor:
                 future_to_horse = {
