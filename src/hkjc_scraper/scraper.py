@@ -606,7 +606,32 @@ def scrape_horse_profile(hkjc_horse_id: str, session: HTTPSession):
         elif label == "外祖父":
             profile["dam_sire_name"] = value
 
-    return profile
+    # Parse 所有往績 table for gear data
+    past_gear: dict = {}
+    for table in all_tables:
+        # Collect all text in td cells to check if this is the 往績 table
+        all_td_texts = [td.get_text(strip=True) for td in table.find_all("td")]
+        if "場次" in all_td_texts and "配備" in all_td_texts:
+            header_row = table.find("tr")
+            if not header_row:
+                continue
+            header_cells = [td.get_text(strip=True) for td in header_row.find_all("td")]
+            try:
+                race_code_idx = header_cells.index("場次")
+                gear_idx = header_cells.index("配備")
+            except ValueError:
+                continue
+            for row in table.find_all("tr")[1:]:
+                cells = row.find_all("td")
+                if len(cells) <= max(race_code_idx, gear_idx):
+                    continue
+                race_code_text = cells[race_code_idx].get_text(strip=True)
+                gear_text = cells[gear_idx].get_text(strip=True)
+                if race_code_text.isdigit():
+                    past_gear[int(race_code_text)] = gear_text if gear_text else None
+            break  # found the right table
+
+    return {"profile": profile, "past_gear": past_gear}
 
 
 # -------------------------------------------------------------------
