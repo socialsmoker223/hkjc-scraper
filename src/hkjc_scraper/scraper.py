@@ -306,10 +306,16 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
         horse_name_cn = horse_cell.get_text(" ", strip=True)
         horse_link = horse_cell.find("a")
 
-        hkjc_horse_id = None
-        horse_profile_url = None
-        if horse_link:
-            hkjc_horse_id, horse_profile_url = parse_horse_link(horse_link)
+        if not horse_link:
+            raise ParseError(
+                f"Horse row has no URL link — cannot extract hkjc_horse_id "
+                f"(horse name: {horse_name_cn})"
+            )
+        hkjc_horse_id, horse_profile_url = parse_horse_link(horse_link)
+        if not hkjc_horse_id:
+            raise ParseError(
+                f"Could not extract hkjc_horse_id from link href for horse: {horse_name_cn}"
+            )
 
         m_code = re.search(r"\(([A-Z0-9]+)\)", horse_name_cn)
         horse_code = m_code.group(1) if m_code else None
