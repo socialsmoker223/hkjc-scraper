@@ -164,6 +164,45 @@ class TestNoneValueHandling:
         assert result["sectional_count"] == 0
 
 
+class TestSectionalTimesStr:
+    """Test sectional_times_str capture in parse_race_header"""
+
+    def test_parse_race_header_captures_sectional_times_str(self):
+        """parse_race_header should return sectional_times_str with comma-separated cumulative splits."""
+        html = """
+        <table>
+            <tr><td>第 1 場 (444)</td></tr>
+            <tr><td></td></tr>
+            <tr><td>第五班 - 1200米 - (40-0)</td></tr>
+            <tr><td>好地</td><td>草地 "A"</td></tr>
+            <tr><td>場地狀況 : 好地 HK$ 875,000 (23.70) (46.53) (1:09.86)</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        table = soup.find("table")
+        result = parse_race_header(table)
+
+        assert result["sectional_times_str"] == "23.70,46.53,1:09.86"
+        assert result["final_time_str"] == "1:09.86"
+
+    def test_parse_race_header_sectional_times_str_none_when_absent(self):
+        """sectional_times_str should be None when no times are in the header."""
+        html = """
+        <table>
+            <tr><td>第 1 場 (444)</td></tr>
+            <tr><td></td></tr>
+            <tr><td>第五班 - 1200米 - (40-0)</td></tr>
+            <tr><td>場地狀況 : 好地 HK$ 875,000</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        table = soup.find("table")
+        result = parse_race_header(table)
+
+        assert result["sectional_times_str"] is None
+        assert result["final_time_str"] is None
+
+
 class TestScrapeRacePageErrorHandling:
     """Test error handling in scrape_race_page"""
 

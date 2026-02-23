@@ -150,6 +150,7 @@ def parse_race_header(info_table: BeautifulSoup):
 
     prize = None
     final_time_str = None
+    sectional_times_str = None
     for r in rows:
         txt = r.get_text(" ", strip=True)
         if "HK$" in txt:
@@ -159,6 +160,7 @@ def parse_race_header(info_table: BeautifulSoup):
             m_times = re.findall(r"\(([^)]+)\)", txt)
             if m_times:
                 final_time_str = m_times[-1]
+                sectional_times_str = ",".join(m_times)
             break
 
     return {
@@ -172,6 +174,7 @@ def parse_race_header(info_table: BeautifulSoup):
         "going": going,
         "prize_total": prize,
         "final_time_str": final_time_str,
+        "sectional_times_str": sectional_times_str,
     }
 
 
