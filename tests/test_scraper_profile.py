@@ -1,8 +1,9 @@
 """Tests for scrape_horse_profile gear extraction from 所有往績 table."""
 from unittest.mock import MagicMock
-import pytest
-from hkjc_scraper.scraper import scrape_horse_profile
 
+import pytest
+
+from hkjc_scraper.scraper import scrape_horse_profile
 
 PROFILE_HTML_WITH_GEAR = """
 <html><body>
