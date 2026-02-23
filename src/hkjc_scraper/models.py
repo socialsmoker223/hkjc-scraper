@@ -80,7 +80,7 @@ class Race(Base):
     horse_sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="race", cascade="all, delete-orphan"
     )
-    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+    hkjc_odds: Mapped[list["HkjcOdds"]] = relationship(
         "HkjcOdds", back_populates="race", cascade="all, delete-orphan"
     )
     offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
@@ -142,7 +142,7 @@ class Horse(Base):
     sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="horse", cascade="all, delete-orphan"
     )
-    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+    hkjc_odds: Mapped[list["HkjcOdds"]] = relationship(
         "HkjcOdds", back_populates="horse", cascade="all, delete-orphan"
     )
     offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
@@ -280,7 +280,7 @@ class Runner(Base):
     sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="runner", cascade="all, delete-orphan"
     )
-    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+    hkjc_odds: Mapped[list["HkjcOdds"]] = relationship(
         "HkjcOdds", back_populates="runner", cascade="all, delete-orphan"
     )
     offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
@@ -357,9 +357,9 @@ class HkjcOdds(Base):
     scraped_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
 
     # Relationships
-    race: Mapped["Race"] = relationship("Race", back_populates="offshore_odds")
-    runner: Mapped["Runner"] = relationship("Runner", back_populates="offshore_odds")
-    horse: Mapped["Horse"] = relationship("Horse", back_populates="offshore_odds")
+    race: Mapped["Race"] = relationship("Race", back_populates="hkjc_odds")
+    runner: Mapped["Runner"] = relationship("Runner", back_populates="hkjc_odds")
+    horse: Mapped["Horse"] = relationship("Horse", back_populates="hkjc_odds")
 
     __table_args__ = (
         UniqueConstraint("runner_id", "bet_type", "recorded_at", name="uq_hkjc_odds_runner_type_time"),
