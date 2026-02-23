@@ -854,22 +854,32 @@ def scrape_meeting(date_ymd: str, scrape_profiles: bool = True):
 
         if all_horses_to_scrape:
             logger.info(f"Scraping {len(all_horses_to_scrape)} horse profiles concurrently...")
-            # Use ThreadPoolExecutor for concurrent profile scraping (configurable workers)
+
+            # gear_map: hkjc_horse_id -> {race_code -> gear_str}
+            gear_map: dict = {}
+
             with ThreadPoolExecutor(max_workers=config.MAX_PROFILE_WORKERS) as executor:
                 future_to_horse = {
                     executor.submit(scrape_horse_profile, hkjc_id, session): (horse, hkjc_id)
                     for horse, hkjc_id in all_horses_to_scrape
                 }
-
-                # Process results as they complete
                 for future in as_completed(future_to_horse):
                     horse, hkjc_id = future_to_horse[future]
                     try:
-                        profile = future.result()
-                        horse.update(profile)
+                        result = future.result()
+                        horse.update(result["profile"])           # flat profile fields as before
+                        gear_map[hkjc_id] = result["past_gear"]  # accumulate gear
                         logger.debug(f"Scraped profile: {hkjc_id} ({horse.get('name_cn', 'N/A')})")
                     except Exception as e:
                         logger.warning(f"Failed to scrape profile for {hkjc_id}: {e}")
+
+            # Assign gear to each runner using gear_map
+            for race_data in all_races:
+                race_code = race_data["race"].get("race_code")
+                for runner in race_data["runners"]:
+                    hkjc_id = runner.get("hkjc_horse_id")
+                    if hkjc_id and race_code:
+                        runner["gear"] = gear_map.get(hkjc_id, {}).get(race_code)
 
         return all_races
 
