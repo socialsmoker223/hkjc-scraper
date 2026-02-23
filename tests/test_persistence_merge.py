@@ -1,7 +1,8 @@
+import pytest
 from sqlalchemy import select
 
 from hkjc_scraper.models import Horse, HorseHistory
-from hkjc_scraper.persistence import save_race_data, upsert_meeting
+from hkjc_scraper.persistence import batch_upsert_horses, save_race_data, upsert_horse, upsert_meeting
 
 
 def test_upsert_meeting_minimal_dict(test_db_session):
@@ -117,3 +118,19 @@ def test_update_existing_horse_profile(test_db_session):
     updated_horse = db.get(Horse, horse.id)
     assert updated_horse.origin == "NZ"
     assert updated_horse.current_rating == 55
+
+
+def test_upsert_horse_raises_if_no_hkjc_horse_id(test_db_session):
+    """upsert_horse must raise ValueError when hkjc_horse_id is missing."""
+    with pytest.raises(ValueError, match="hkjc_horse_id"):
+        upsert_horse(test_db_session, {"code": "J344", "name_cn": "測試馬"})
+
+
+def test_batch_upsert_horses_raises_if_any_missing_hkjc_horse_id(test_db_session):
+    """batch_upsert_horses must raise ValueError when any horse is missing hkjc_horse_id."""
+    horses = [
+        {"code": "J344", "name_cn": "馬A", "hkjc_horse_id": "HK_2023_J344"},
+        {"code": "K999", "name_cn": "馬B"},  # missing hkjc_horse_id
+    ]
+    with pytest.raises(ValueError, match="hkjc_horse_id"):
+        batch_upsert_horses(test_db_session, horses)

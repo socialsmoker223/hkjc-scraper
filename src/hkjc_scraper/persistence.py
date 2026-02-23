@@ -193,6 +193,10 @@ def upsert_horse(db: Session, horse_data: dict[str, Any]) -> Horse:
     Returns:
         Horse object
     """
+    if not horse_data.get("hkjc_horse_id"):
+        raise ValueError(
+            f"hkjc_horse_id is required but missing for horse: {horse_data.get('code')}"
+        )
     # Use PostgreSQL's native ON CONFLICT for true UPSERT in 1 query (was 2)
     # Use hkjc_horse_id as unique key (always present, handles NULL name_en)
     stmt = insert(Horse).values(horse_data)
@@ -399,12 +403,13 @@ def batch_upsert_horses(db: Session, horse_list: list[dict[str, Any]]) -> dict[s
     if not horse_list:
         return {}
 
-    # Deduplicate by conflict key (hkjc_horse_id) — last wins
-    deduped = {r["hkjc_horse_id"]: r for r in horse_list if r.get("hkjc_horse_id")}
-    unique_list = list(deduped.values())
+    missing = [r.get("code") for r in horse_list if not r.get("hkjc_horse_id")]
+    if missing:
+        raise ValueError(f"hkjc_horse_id is required but missing for horses: {missing}")
 
-    if not unique_list:
-        return {}
+    # Deduplicate by conflict key (hkjc_horse_id) — last wins
+    deduped = {r["hkjc_horse_id"]: r for r in horse_list}
+    unique_list = list(deduped.values())
 
     stmt = insert(Horse).values(unique_list)
     stmt = stmt.on_conflict_do_update(
