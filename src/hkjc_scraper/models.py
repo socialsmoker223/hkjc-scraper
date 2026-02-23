@@ -70,6 +70,7 @@ class Race(Base):
     going: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
     prize_total: Mapped[Optional[int]] = mapped_column(INT)
     final_time_str: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
+    sectional_times_str: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     localresults_url: Mapped[Optional[str]] = mapped_column(TEXT)
     sectional_url: Mapped[Optional[str]] = mapped_column(TEXT)
 
@@ -269,6 +270,7 @@ class Runner(Base):
     running_pos_raw: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     finish_time_str: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
     win_odds: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(8, 2))
+    gear: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
 
     # Relationships
     race: Mapped["Race"] = relationship("Race", back_populates="runners")
