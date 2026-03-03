@@ -70,6 +70,7 @@ class Race(Base):
     going: Mapped[Optional[str]] = mapped_column(VARCHAR(32))
     prize_total: Mapped[Optional[int]] = mapped_column(INT)
     final_time_str: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
+    sectional_times_str: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     localresults_url: Mapped[Optional[str]] = mapped_column(TEXT)
     sectional_url: Mapped[Optional[str]] = mapped_column(TEXT)
 
@@ -79,7 +80,7 @@ class Race(Base):
     horse_sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="race", cascade="all, delete-orphan"
     )
-    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+    hkjc_odds: Mapped[list["HkjcOdds"]] = relationship(
         "HkjcOdds", back_populates="race", cascade="all, delete-orphan"
     )
     offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
@@ -107,7 +108,7 @@ class Horse(Base):
     code: Mapped[str] = mapped_column(VARCHAR(16), nullable=False)
     name_cn: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
     name_en: Mapped[Optional[str]] = mapped_column(VARCHAR(128))
-    hkjc_horse_id: Mapped[Optional[str]] = mapped_column(VARCHAR(32), unique=True)
+    hkjc_horse_id: Mapped[str] = mapped_column(VARCHAR(32), unique=True)
     profile_url: Mapped[Optional[str]] = mapped_column(TEXT)
 
     # Merged profile fields
@@ -141,7 +142,7 @@ class Horse(Base):
     sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="horse", cascade="all, delete-orphan"
     )
-    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+    hkjc_odds: Mapped[list["HkjcOdds"]] = relationship(
         "HkjcOdds", back_populates="horse", cascade="all, delete-orphan"
     )
     offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
@@ -269,6 +270,7 @@ class Runner(Base):
     running_pos_raw: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
     finish_time_str: Mapped[Optional[str]] = mapped_column(VARCHAR(16))
     win_odds: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(8, 2))
+    gear: Mapped[Optional[str]] = mapped_column(VARCHAR(64))
 
     # Relationships
     race: Mapped["Race"] = relationship("Race", back_populates="runners")
@@ -278,7 +280,7 @@ class Runner(Base):
     sectionals: Mapped[list["HorseSectional"]] = relationship(
         "HorseSectional", back_populates="runner", cascade="all, delete-orphan"
     )
-    offshore_odds: Mapped[list["HkjcOdds"]] = relationship(
+    hkjc_odds: Mapped[list["HkjcOdds"]] = relationship(
         "HkjcOdds", back_populates="runner", cascade="all, delete-orphan"
     )
     offshore_markets: Mapped[list["OffshoreMarket"]] = relationship(
@@ -355,9 +357,9 @@ class HkjcOdds(Base):
     scraped_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
 
     # Relationships
-    race: Mapped["Race"] = relationship("Race", back_populates="offshore_odds")
-    runner: Mapped["Runner"] = relationship("Runner", back_populates="offshore_odds")
-    horse: Mapped["Horse"] = relationship("Horse", back_populates="offshore_odds")
+    race: Mapped["Race"] = relationship("Race", back_populates="hkjc_odds")
+    runner: Mapped["Runner"] = relationship("Runner", back_populates="hkjc_odds")
+    horse: Mapped["Horse"] = relationship("Horse", back_populates="hkjc_odds")
 
     __table_args__ = (
         UniqueConstraint("runner_id", "bet_type", "recorded_at", name="uq_hkjc_odds_runner_type_time"),

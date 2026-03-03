@@ -2,7 +2,7 @@
 Tests for error handling in scraper and persistence layers
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from bs4 import BeautifulSoup
@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from hkjc_scraper.exceptions import ParseError
 from hkjc_scraper.persistence import save_race_data
-from hkjc_scraper.scraper import parse_race_header
+from hkjc_scraper.scraper import parse_race_header, scrape_race_page
 
 
 class TestParseErrorHandling:
@@ -162,3 +162,79 @@ class TestNoneValueHandling:
         assert result["race_id"] is not None
         assert result["runner_count"] == 0
         assert result["sectional_count"] == 0
+
+
+class TestSectionalTimesStr:
+    """Test sectional_times_str capture in parse_race_header"""
+
+    def test_parse_race_header_captures_sectional_times_str(self):
+        """parse_race_header should return sectional_times_str with comma-separated cumulative splits."""
+        html = """
+        <table>
+            <tr><td>第 1 場 (444)</td></tr>
+            <tr><td></td></tr>
+            <tr><td>第五班 - 1200米 - (40-0)</td></tr>
+            <tr><td>好地</td><td>草地 "A"</td></tr>
+            <tr><td>場地狀況 : 好地 HK$ 875,000 (23.70) (46.53) (1:09.86)</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        table = soup.find("table")
+        result = parse_race_header(table)
+
+        assert result["sectional_times_str"] == "23.70,46.53,1:09.86"
+        assert result["final_time_str"] == "1:09.86"
+
+    def test_parse_race_header_sectional_times_str_none_when_absent(self):
+        """sectional_times_str should be None when no times are in the header."""
+        html = """
+        <table>
+            <tr><td>第 1 場 (444)</td></tr>
+            <tr><td></td></tr>
+            <tr><td>第五班 - 1200米 - (40-0)</td></tr>
+            <tr><td>場地狀況 : 好地 HK$ 875,000</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        table = soup.find("table")
+        result = parse_race_header(table)
+
+        assert result["sectional_times_str"] is None
+        assert result["final_time_str"] is None
+
+
+class TestScrapeRacePageErrorHandling:
+    """Test error handling in scrape_race_page"""
+
+    def test_scrape_race_page_raises_on_missing_horse_link(self, mock_http_response):
+        """scrape_race_page must raise ParseError when a horse row has no URL link."""
+        html = """
+        <html><body>
+        <table>
+          <tr><td>第 1 場 (444)</td></tr>
+          <tr><td></td></tr>
+          <tr><td>第五班 - 1200米 - (40-0)</td></tr>
+          <tr><td>賽事日期: 19/02/2026 沙田</td><td></td><td>HK$ 875,000 (1:09.86)</td></tr>
+        </table>
+        <table>
+          <tr>
+            <td>名次</td><td>馬號</td><td>馬名</td><td>騎師</td><td>練馬師</td>
+            <td>實際負磅</td><td>排位體重</td><td>檔位</td><td>頭馬距離</td>
+            <td>沿途走位</td><td>完成時間</td><td>獨贏賠率</td>
+          </tr>
+          <tr>
+            <td>1</td><td>2</td>
+            <td>金快飛飛 (K121)</td>
+            <td><a href="/racing/information/Chinese/Jockey/Jockey.aspx?JockeyId=PZ">平沙</a></td>
+            <td><a href="/racing/information/Chinese/Trainer/Trainer.aspx?TrainerId=YTP">丁冠豪</a></td>
+            <td>133</td><td>1073</td><td>4</td><td>—</td>
+            <td>1 2 3</td><td>1:09.86</td><td>6.2</td>
+          </tr>
+        </table>
+        </body></html>
+        """
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_http_response(html)
+
+        with pytest.raises(ParseError, match="hkjc_horse_id"):
+            scrape_race_page("http://example.com/race", mock_session, venue_code="ST")

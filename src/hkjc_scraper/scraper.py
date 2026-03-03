@@ -150,6 +150,7 @@ def parse_race_header(info_table: BeautifulSoup):
 
     prize = None
     final_time_str = None
+    sectional_times_str = None
     for r in rows:
         txt = r.get_text(" ", strip=True)
         if "HK$" in txt:
@@ -159,6 +160,7 @@ def parse_race_header(info_table: BeautifulSoup):
             m_times = re.findall(r"\(([^)]+)\)", txt)
             if m_times:
                 final_time_str = m_times[-1]
+                sectional_times_str = ",".join(m_times)
             break
 
     return {
@@ -172,6 +174,7 @@ def parse_race_header(info_table: BeautifulSoup):
         "going": going,
         "prize_total": prize,
         "final_time_str": final_time_str,
+        "sectional_times_str": sectional_times_str,
     }
 
 
@@ -306,10 +309,16 @@ def scrape_race_page(local_url: str, session: HTTPSession, venue_code: str = Non
         horse_name_cn = horse_cell.get_text(" ", strip=True)
         horse_link = horse_cell.find("a")
 
-        hkjc_horse_id = None
-        horse_profile_url = None
-        if horse_link:
-            hkjc_horse_id, horse_profile_url = parse_horse_link(horse_link)
+        if not horse_link:
+            raise ParseError(
+                f"Horse row has no URL link — cannot extract hkjc_horse_id "
+                f"(horse name: {horse_name_cn})"
+            )
+        hkjc_horse_id, horse_profile_url = parse_horse_link(horse_link)
+        if not hkjc_horse_id:
+            raise ParseError(
+                f"Could not extract hkjc_horse_id from link href for horse: {horse_name_cn}"
+            )
 
         m_code = re.search(r"\(([A-Z0-9]+)\)", horse_name_cn)
         horse_code = m_code.group(1) if m_code else None
@@ -600,7 +609,32 @@ def scrape_horse_profile(hkjc_horse_id: str, session: HTTPSession):
         elif label == "外祖父":
             profile["dam_sire_name"] = value
 
-    return profile
+    # Parse 所有往績 table for gear data
+    past_gear: dict = {}
+    for table in all_tables:
+        # Collect all text in td cells to check if this is the 往績 table
+        all_td_texts = [td.get_text(strip=True) for td in table.find_all("td")]
+        if "場次" in all_td_texts and "配備" in all_td_texts:
+            header_row = table.find("tr")
+            if not header_row:
+                continue
+            header_cells = [td.get_text(strip=True) for td in header_row.find_all("td")]
+            try:
+                race_code_idx = header_cells.index("場次")
+                gear_idx = header_cells.index("配備")
+            except ValueError:
+                continue
+            for row in table.find_all("tr")[1:]:
+                cells = row.find_all("td")
+                if len(cells) <= max(race_code_idx, gear_idx):
+                    continue
+                race_code_text = cells[race_code_idx].get_text(strip=True)
+                gear_text = cells[gear_idx].get_text(strip=True)
+                if race_code_text.isdigit():
+                    past_gear[int(race_code_text)] = gear_text if gear_text else None
+            break  # found the right table
+
+    return {"profile": profile, "past_gear": past_gear}
 
 
 # -------------------------------------------------------------------
@@ -823,22 +857,32 @@ def scrape_meeting(date_ymd: str, scrape_profiles: bool = True):
 
         if all_horses_to_scrape:
             logger.info(f"Scraping {len(all_horses_to_scrape)} horse profiles concurrently...")
-            # Use ThreadPoolExecutor for concurrent profile scraping (configurable workers)
+
+            # gear_map: hkjc_horse_id -> {race_code -> gear_str}
+            gear_map: dict[str, dict[int, str | None]] = {}
+
             with ThreadPoolExecutor(max_workers=config.MAX_PROFILE_WORKERS) as executor:
                 future_to_horse = {
                     executor.submit(scrape_horse_profile, hkjc_id, session): (horse, hkjc_id)
                     for horse, hkjc_id in all_horses_to_scrape
                 }
-
-                # Process results as they complete
                 for future in as_completed(future_to_horse):
                     horse, hkjc_id = future_to_horse[future]
                     try:
-                        profile = future.result()
-                        horse.update(profile)
+                        result = future.result()
+                        horse.update(result["profile"])           # flat profile fields as before
+                        gear_map[hkjc_id] = result["past_gear"]  # accumulate gear
                         logger.debug(f"Scraped profile: {hkjc_id} ({horse.get('name_cn', 'N/A')})")
                     except Exception as e:
                         logger.warning(f"Failed to scrape profile for {hkjc_id}: {e}")
+
+            # Assign gear to each runner using gear_map
+            for race_data in all_races:
+                race_code = race_data["race"].get("race_code")
+                for runner in race_data["runners"]:
+                    hkjc_id = runner.get("hkjc_horse_id")
+                    if hkjc_id and race_code:
+                        runner["gear"] = gear_map.get(hkjc_id, {}).get(race_code)
 
         return all_races
 
