@@ -74,22 +74,22 @@ class HKJCRacingSpider(Spider):
         yield {"table": "races", "data": race_data}
         race_id = race_data["race_id"]
 
-        # Collect profile IDs during performance parsing
-        horse_ids = set()
-        jockey_ids = set()
-        trainer_ids = set()
+        # Collect profile IDs and names during performance parsing
+        horses = {}  # horse_id -> horse_name
+        jockeys = {}  # jockey_id -> jockey_name
+        trainers = {}  # trainer_id -> trainer_name
 
-        # Parse performance table and collect IDs
+        # Parse performance table and collect IDs and names
         for perf_item in self._parse_performance_table(response, race_id):
             yield perf_item
-            # Collect IDs
+            # Collect IDs and names
             data = perf_item.get("data", {})
-            if data.get("horse_id"):
-                horse_ids.add(data["horse_id"])
-            if data.get("jockey_id"):
-                jockey_ids.add(data["jockey_id"])
-            if data.get("trainer_id"):
-                trainer_ids.add(data["trainer_id"])
+            if data.get("horse_id") and data.get("horse_name"):
+                horses[data["horse_id"]] = data["horse_name"]
+            if data.get("jockey_id") and data.get("jockey"):
+                jockeys[data["jockey_id"]] = data["jockey"]
+            if data.get("trainer_id") and data.get("trainer"):
+                trainers[data["trainer_id"]] = data["trainer"]
 
         # Parse dividends and incidents
         for div_item in self._parse_dividends(response, race_id):
@@ -99,27 +99,27 @@ class HKJCRacingSpider(Spider):
 
         # Yield profile fetching requests directly
         # Fetch horse profiles
-        for horse_id in horse_ids:
+        for horse_id, horse_name in horses.items():
             if horse_id not in self._seen_horses:
                 self._seen_horses.add(horse_id)
                 url = f"https://racing.hkjc.com/zh-hk/local/information/horse?horseid={horse_id}"
-                yield Request(url, callback=self.parse_horse_profile, meta={"horse_id": horse_id})
+                yield Request(url, callback=self.parse_horse_profile, meta={"horse_id": horse_id, "horse_name": horse_name})
 
         # Fetch jockey profiles
-        for jockey_id in jockey_ids:
+        for jockey_id, jockey_name in jockeys.items():
             if jockey_id not in self._seen_jockeys:
                 self._seen_jockeys.add(jockey_id)
                 # Note: HKJC uses uppercase 'Season' for jockey URLs
                 url = f"https://racing.hkjc.com/zh-hk/local/information/jockeyprofile?jockeyid={jockey_id}&Season=Current"
-                yield Request(url, callback=self.parse_jockey_profile, meta={"jockey_id": jockey_id})
+                yield Request(url, callback=self.parse_jockey_profile, meta={"jockey_id": jockey_id, "jockey_name": jockey_name})
 
         # Fetch trainer profiles
-        for trainer_id in trainer_ids:
+        for trainer_id, trainer_name in trainers.items():
             if trainer_id not in self._seen_trainers:
                 self._seen_trainers.add(trainer_id)
                 # Note: HKJC uses lowercase 'season' for trainer URLs (site-specific parameter casing)
                 url = f"https://racing.hkjc.com/zh-hk/local/information/trainerprofile?trainerid={trainer_id}&season=Current"
-                yield Request(url, callback=self.parse_trainer_profile, meta={"trainer_id": trainer_id})
+                yield Request(url, callback=self.parse_trainer_profile, meta={"trainer_id": trainer_id, "trainer_name": trainer_name})
 
     def _parse_race_metadata(self, response, date: str, racecourse: str, race_no: int) -> dict:
         """Extract race metadata from the race page response.
