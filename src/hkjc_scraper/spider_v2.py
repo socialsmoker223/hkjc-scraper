@@ -67,6 +67,8 @@ class HKJCRacingSpider(Spider):
             yield perf_item
         for div_item in self._parse_dividends(response, race_id):
             yield div_item
+        for inc_item in self._parse_incidents(response, race_id):
+            yield inc_item
 
     def _parse_race_metadata(self, response, date: str, racecourse: str, race_no: int) -> dict:
         """Extract race metadata from the race page response.
@@ -276,6 +278,33 @@ class HKJCRacingSpider(Spider):
                             "payout": payout
                         }
                         yield {"table": "dividends", "data": dividend}
+
+    def _parse_incidents(self, response, race_id: str):
+        """Extract incidents table.
+
+        Args:
+            response: The HTTP response object
+            race_id: Unique race identifier
+
+        Yields:
+            Dictionaries with "table": "incidents" and incident data
+        """
+        for table in response.css("table.table_bd"):
+            header = table.css("thead tr td")
+            if header and any("競賽事件" in h.text for h in header):
+                for row in table.css("tbody tr"):
+                    cells = row.css("td")
+                    if len(cells) >= 4:
+                        horse_link = cells[2].css("a")
+                        horse_name = horse_link[0].text.strip() if horse_link else ""
+                        incident = {
+                            "race_id": race_id,
+                            "position": cells[0].text.strip(),
+                            "horse_no": cells[1].text.strip(),
+                            "horse_name": horse_name,
+                            "incident_report": cells[3].text.strip()
+                        }
+                        yield {"table": "incidents", "data": incident}
 
     async def parse(self, response):
         """Default parse method required by Spider base class."""

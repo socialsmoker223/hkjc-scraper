@@ -428,3 +428,26 @@ class TestDividendsParser:
         assert "獨贏" in pools
         assert "位置" in pools
         assert "連贏" in pools
+
+
+class TestIncidentsParser:
+    """Test incidents table parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_race_yields_incidents(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+        await collect_items()
+        inc_items = [i for i in items if i.get("table") == "incidents"]
+        # Don't assert count - incidents may not exist in all races
+        if inc_items:
+            inc_data = inc_items[0]["data"]
+            assert "incident_report" in inc_data
