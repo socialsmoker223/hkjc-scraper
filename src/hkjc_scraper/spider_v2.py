@@ -1,7 +1,7 @@
 """HKJC Racing Spider - Proper Scrapling Spider implementation."""
 
 import re
-from scrapling.spiders import Spider
+from scrapling.spiders import Spider, Request
 
 from hkjc_scraper.parsers import (
     clean_position,
@@ -30,14 +30,14 @@ class HKJCRacingSpider(Spider):
         self.dates = dates
         self.racecourse = racecourse
 
-    def start_requests(self):
+    async def start_requests(self):
         if self.dates:
             for date in self.dates:
                 racecourse = self.racecourse or "ST"
                 url = f"{self.BASE_URL}?racedate={date}&Racecourse={racecourse}"
-                yield self.fetch(url, callback=self.parse_all_results, meta={"date": date, "racecourse": racecourse})
+                yield Request(url, callback=self.parse_all_results, meta={"date": date, "racecourse": racecourse})
         else:
-            yield self.fetch(self.BASE_URL, callback=self.parse_discover_dates)
+            yield Request(self.BASE_URL, callback=self.parse_discover_dates)
 
     async def parse_discover_dates(self, response):
         for opt in response.css("#selectId option"):

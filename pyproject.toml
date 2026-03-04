@@ -20,3 +20,6 @@ test = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (makes network requests)",
+]
