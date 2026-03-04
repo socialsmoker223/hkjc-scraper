@@ -217,3 +217,109 @@ class TestRaceMetadataParser:
 
         assert "racecourse" in race_data
         assert race_data["racecourse"] == "谷草"
+
+
+class TestPerformanceParser:
+    """Test performance (horse results) table parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_race_yields_performance_items(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+        await collect_items()
+        perf_items = [i for i in items if i.get("table") == "performance"]
+        assert len(perf_items) > 0
+        perf_data = perf_items[0]["data"]
+        assert "horse_no" in perf_data
+        assert "horse_name" in perf_data
+        assert "position" in perf_data
+
+    @pytest.mark.asyncio
+    async def test_parse_performance_extracts_horse_details(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        await collect_items()
+        perf_items = [i for i in items if i.get("table") == "performance"]
+        assert len(perf_items) > 0
+
+        # Check first horse (winner: 步風雷)
+        winner = perf_items[0]["data"]
+        assert winner["horse_no"] == "9"
+        assert winner["horse_name"] == "步風雷"
+        assert winner["horse_id"] == "HK_2023_J452"
+        assert winner["position"] == "1"
+        assert winner["jockey"] == "艾兆禮"
+        assert winner["trainer"] == "伍鵬志"
+        assert winner["actual_weight"] == "120"
+        assert winner["body_weight"] == "1060"
+        assert winner["draw"] == "5"
+        assert winner["margin"] == "-"
+        assert winner["finish_time"] == "1:47.33"
+        assert winner["win_odds"] == "10"
+        assert winner["race_id"] == "2026-03-01-ST-1"
+
+    @pytest.mark.asyncio
+    async def test_parse_performance_extracts_running_position(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        await collect_items()
+        perf_items = [i for i in items if i.get("table") == "performance"]
+        assert len(perf_items) > 0
+
+        # Check running position for winner (步風雷)
+        winner = perf_items[0]["data"]
+        assert "running_position" in winner
+        assert winner["running_position"] == ["4", "4", "4", "3", "1"]
+
+    @pytest.mark.asyncio
+    async def test_parse_performance_multiple_horses(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        await collect_items()
+        perf_items = [i for i in items if i.get("table") == "performance"]
+
+        # Should have multiple horses
+        assert len(perf_items) >= 14  # 14 horses in the sample race
+
+        # Check second place
+        second_place = perf_items[1]["data"]
+        assert second_place["position"] == "2"
+        assert second_place["horse_name"] == "同益善"
+        assert second_place["horse_no"] == "7"
+        assert second_place["margin"] == "3/4"

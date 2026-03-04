@@ -62,6 +62,9 @@ class HKJCRacingSpider(Spider):
         race_no = meta.get("race_no", 1)
         race_data = self._parse_race_metadata(response, date, racecourse, race_no)
         yield {"table": "races", "data": race_data}
+        race_id = race_data["race_id"]
+        for perf_item in self._parse_performance_table(response, race_id):
+            yield perf_item
 
     def _parse_race_metadata(self, response, date: str, racecourse: str, race_no: int) -> dict:
         """Extract race metadata from the race page response.
@@ -181,6 +184,56 @@ class HKJCRacingSpider(Spider):
                     race_data["race_name"] = first_cell_text
 
         return race_data
+
+    def _parse_performance_table(self, response, race_id: str):
+        """Extract performance (horse results) table.
+
+        Args:
+            response: The HTTP response object
+            race_id: Unique race identifier
+
+        Yields:
+            Dictionaries with "table": "performance" and horse performance data
+        """
+        results_table = response.css("table.draggable")
+        if not results_table:
+            return
+        rows = results_table[0].css("tbody tr")
+        for row in rows:
+            cells = row.css("td")
+            if len(cells) >= 12:
+                horse_link = cells[2].css("a")
+                horse_name = ""
+                horse_id = None
+                if horse_link:
+                    horse_name = horse_link[0].text.strip()
+                    href = horse_link[0].attrib.get("href", "")
+                    if "horseid=" in href:
+                        horse_id = href.split("horseid=")[1].split("&")[0]
+                jockey_link = cells[3].css("a")
+                jockey = jockey_link[0].text.strip() if jockey_link else ""
+                trainer_link = cells[4].css("a")
+                trainer = trainer_link[0].text.strip() if trainer_link else ""
+                pos_text = cells[0].text.strip()
+                position = clean_position(pos_text) if pos_text else ""
+                running_pos = parse_running_position(cells[9])
+                performance = {
+                    "race_id": race_id,
+                    "position": position,
+                    "horse_no": cells[1].text.strip(),
+                    "horse_id": horse_id,
+                    "horse_name": horse_name,
+                    "jockey": jockey,
+                    "trainer": trainer,
+                    "actual_weight": cells[5].text.strip(),
+                    "body_weight": cells[6].text.strip(),
+                    "draw": cells[7].text.strip(),
+                    "margin": cells[8].text.strip(),
+                    "running_position": running_pos,
+                    "finish_time": cells[10].text.strip(),
+                    "win_odds": cells[11].text.strip()
+                }
+                yield {"table": "performance", "data": performance}
 
     async def parse(self, response):
         """Default parse method required by Spider base class."""
