@@ -488,3 +488,62 @@ class TestErrorHandling:
         assert clean_position("") == ""
         assert clean_position(None) == ""
         assert clean_position(" ") == ""
+
+
+class TestPerformanceIdsExtraction:
+    """Test jockey_id and trainer_id extraction from performance table."""
+
+    def test_performance_extraction_includes_ids(self):
+        """Test that performance items include jockey_id and trainer_id."""
+        from bs4 import BeautifulSoup
+
+        html = """
+        <table class="draggable">
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>7</td>
+                    <td><a href="/zh-hk/local/information/horse?horseid=HK_2024_K306">堅多福</a></td>
+                    <td><a href="/zh-hk/local/information/jockeyprofile?jockeyid=BH&Season=Current">布文</a></td>
+                    <td><a href="/zh-hk/local/information/trainerprofile?trainerid=FC&season=Current">方嘉柏</a></td>
+                    <td>120</td>
+                    <td>1050</td>
+                    <td>3</td>
+                    <td></td>
+                    <td><div><div>1</div><div>2</div></div></td>
+                    <td>1:49.35</td>
+                    <td>12.5</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+
+        class MockResponse:
+            def __init__(self, html):
+                self.html = html
+
+            def css(self, selector):
+                soup = BeautifulSoup(self.html, "html.parser")
+                results = soup.select(selector)
+                return [self._element_to_mock(e) for e in results]
+
+            def _element_to_mock(self, elem):
+                class MockElem:
+                    def __init__(self, el):
+                        self._el = el
+                        self.text = el.get_text(strip=True)
+                        self.attrib = {"href": el.get("href", "")}
+
+                    def css(self, selector):
+                        return [MockElem(e) for e in self._el.select(selector)]
+
+                return MockElem(elem)
+
+        response = MockResponse(html)
+
+        spider = HKJCRacingSpider()
+        results = list(spider._parse_performance_table(response, "test-race-id"))
+
+        assert len(results) == 1
+        assert results[0]["data"]["jockey_id"] == "BH"
+        assert results[0]["data"]["trainer_id"] == "FC"

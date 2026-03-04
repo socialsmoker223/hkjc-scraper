@@ -229,8 +229,18 @@ class HKJCRacingSpider(Spider):
                             horse_id = href.split("horseid=")[1].split("&")[0]
                     jockey_link = cells[3].css("a")
                     jockey = jockey_link[0].text.strip() if jockey_link else ""
+                    jockey_id = None
+                    if jockey_link:
+                        href = jockey_link[0].attrib.get("href", "")
+                        if "jockeyid=" in href:
+                            jockey_id = href.split("jockeyid=")[1].split("&")[0]
                     trainer_link = cells[4].css("a")
                     trainer = trainer_link[0].text.strip() if trainer_link else ""
+                    trainer_id = None
+                    if trainer_link:
+                        href = trainer_link[0].attrib.get("href", "")
+                        if "trainerid=" in href:
+                            trainer_id = href.split("trainerid=")[1].split("&")[0]
                     pos_text = cells[0].text.strip()
                     position = clean_position(pos_text) if pos_text else ""
                     running_pos = parse_running_position(cells[9])
@@ -241,7 +251,9 @@ class HKJCRacingSpider(Spider):
                         "horse_id": horse_id,
                         "horse_name": horse_name,
                         "jockey": jockey,
+                        "jockey_id": jockey_id,
                         "trainer": trainer,
+                        "trainer_id": trainer_id,
                         "actual_weight": cells[5].text.strip(),
                         "body_weight": cells[6].text.strip(),
                         "draw": cells[7].text.strip(),
