@@ -41,6 +41,7 @@ def sample_race_html():
 @pytest.fixture
 def sample_race_response(sample_race_html):
     from bs4 import BeautifulSoup
+    from scrapling.spiders import Request
 
     class MockResponse:
         def __init__(self, html):
@@ -68,5 +69,12 @@ def sample_race_response(sample_race_html):
                     return [MockElem(e) for e in self._el.select(selector)]
 
             return MockElem(elem)
+
+        def follow(self, url, callback=None, meta=None):
+            """Mock follow method that returns a Request object."""
+            req = Request(url)
+            req.callback = callback
+            req.meta = meta or {}
+            return req
 
     return MockResponse(sample_race_html)

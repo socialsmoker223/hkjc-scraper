@@ -49,7 +49,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         assert len(race_items) > 0
         race_data = race_items[0]["data"]
         assert "race_id" in race_data
@@ -74,7 +74,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         race_data = race_items[0]["data"]
 
         # Check class parsing
@@ -105,7 +105,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         race_data = race_items[0]["data"]
 
         # Check going (track condition)
@@ -137,7 +137,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         race_data = race_items[0]["data"]
 
         # Check race name
@@ -164,7 +164,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         race_data = race_items[0]["data"]
 
         # Check sectional times
@@ -189,7 +189,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         race_data = race_items[0]["data"]
 
         assert "racecourse" in race_data
@@ -212,7 +212,7 @@ class TestRaceMetadataParser:
         }
 
         await collect_items()
-        race_items = [i for i in items if i.get("table") == "races"]
+        race_items = [i for i in items if isinstance(i, dict) and i.get("table") == "races"]
         race_data = race_items[0]["data"]
 
         assert "racecourse" in race_data
@@ -230,7 +230,7 @@ class TestPerformanceParser:
             async for item in spider.parse_race(sample_race_response):
                 items.append(item)
         await collect_items()
-        perf_items = [i for i in items if i.get("table") == "performance"]
+        perf_items = [i for i in items if isinstance(i, dict) and i.get("table") == "performance"]
         assert len(perf_items) > 0
         perf_data = perf_items[0]["data"]
         assert "horse_no" in perf_data
@@ -253,7 +253,7 @@ class TestPerformanceParser:
         }
 
         await collect_items()
-        perf_items = [i for i in items if i.get("table") == "performance"]
+        perf_items = [i for i in items if isinstance(i, dict) and i.get("table") == "performance"]
         assert len(perf_items) > 0
 
         # Check first horse (winner: 步風雷)
@@ -288,7 +288,7 @@ class TestPerformanceParser:
         }
 
         await collect_items()
-        perf_items = [i for i in items if i.get("table") == "performance"]
+        perf_items = [i for i in items if isinstance(i, dict) and i.get("table") == "performance"]
         assert len(perf_items) > 0
 
         # Check running position for winner (步風雷)
@@ -312,7 +312,7 @@ class TestPerformanceParser:
         }
 
         await collect_items()
-        perf_items = [i for i in items if i.get("table") == "performance"]
+        perf_items = [i for i in items if isinstance(i, dict) and i.get("table") == "performance"]
 
         # Should have multiple horses
         assert len(perf_items) >= 14  # 14 horses in the sample race
@@ -341,7 +341,7 @@ class TestDividendsParser:
             "race_no": 1
         }
         await collect_items()
-        div_items = [i for i in items if i.get("table") == "dividends"]
+        div_items = [i for i in items if isinstance(i, dict) and i.get("table") == "dividends"]
         assert len(div_items) > 0
         div_data = div_items[0]["data"]
         assert "pool" in div_data
@@ -364,7 +364,7 @@ class TestDividendsParser:
         }
 
         await collect_items()
-        div_items = [i for i in items if i.get("table") == "dividends"]
+        div_items = [i for i in items if isinstance(i, dict) and i.get("table") == "dividends"]
 
         # Filter for "位置" (Place) pool entries
         place_dividends = [d for d in div_items if d["data"]["pool"] == "位置"]
@@ -389,7 +389,7 @@ class TestDividendsParser:
         }
 
         await collect_items()
-        div_items = [i for i in items if i.get("table") == "dividends"]
+        div_items = [i for i in items if isinstance(i, dict) and i.get("table") == "dividends"]
 
         # Check 獨贏 (Win) pool
         win_dividends = [d for d in div_items if d["data"]["pool"] == "獨贏"]
@@ -419,7 +419,7 @@ class TestDividendsParser:
         }
 
         await collect_items()
-        div_items = [i for i in items if i.get("table") == "dividends"]
+        div_items = [i for i in items if isinstance(i, dict) and i.get("table") == "dividends"]
 
         # Extract unique pool names
         pools = set(d["data"]["pool"] for d in div_items)
@@ -446,7 +446,7 @@ class TestIncidentsParser:
             "race_no": 1
         }
         await collect_items()
-        inc_items = [i for i in items if i.get("table") == "incidents"]
+        inc_items = [i for i in items if isinstance(i, dict) and i.get("table") == "incidents"]
         # Don't assert count - incidents may not exist in all races
         if inc_items:
             inc_data = inc_items[0]["data"]
@@ -460,6 +460,7 @@ class TestErrorHandling:
     async def test_parse_race_handles_missing_tables(self):
         """Test that parse_race handles pages with no data tables gracefully."""
         empty_html = "<html><body>No tables</body></html>"
+        from scrapling.spiders import Request
 
         class EmptyResponse:
             def __init__(self):
@@ -468,6 +469,13 @@ class TestErrorHandling:
 
             def css(self, selector):
                 return []
+
+            def follow(self, url, callback=None, meta=None):
+                """Mock follow method that returns a Request object."""
+                req = Request(url)
+                req.callback = callback
+                req.meta = meta or {}
+                return req
 
         spider = HKJCRacingSpider()
         response = EmptyResponse()
@@ -479,8 +487,10 @@ class TestErrorHandling:
 
         await collect_items()
         # Should still yield the races table with metadata even if no other tables exist
-        assert len(items) >= 1
-        assert items[0]["table"] == "races"
+        # Filter for dict items only (excluding Request objects)
+        data_items = [i for i in items if isinstance(i, dict)]
+        assert len(data_items) >= 1
+        assert data_items[0]["table"] == "races"
 
     def test_clean_position_handles_empty(self):
         """Test that clean_position handles empty and None values."""
@@ -625,6 +635,99 @@ class TestFetchProfiles:
         assert any("HK_2022_H293" in u for u in urls)  # Unseen horse
         assert any("AA" in u for u in urls)  # Unseen jockey
         assert any("SCS" in u for u in urls)  # Unseen trainer
+
+
+class TestParseRaceCollectsProfileIds:
+    """Test that parse_race collects profile IDs and yields profile fetch request."""
+
+    @pytest.mark.asyncio
+    async def test_parse_race_collects_profile_ids(self):
+        """Test that parse_race collects profile IDs and yields profile fetch request."""
+        from bs4 import BeautifulSoup
+        from scrapling.spiders import Request
+
+        spider = HKJCRacingSpider()
+
+        # Minimal race HTML with profile links
+        html = """
+        <div>
+            <table class="draggable">
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>7</td>
+                        <td><a href="/zh-hk/local/information/horse?horseid=HK_2024_K306">堅多福</a></td>
+                        <td><a href="/zh-hk/local/information/jockeyprofile?jockeyid=BH&Season=Current">布文</a></td>
+                        <td><a href="/zh-hk/local/information/trainerprofile?trainerid=FC&season=Current">方嘉柏</a></td>
+                        <td>120</td>
+                        <td>1050</td>
+                        <td>3</td>
+                        <td></td>
+                        <td><div><div>1</div><div>2</div></div></td>
+                        <td>1:49.35</td>
+                        <td>12.5</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        """
+
+        class MockResponse:
+            def __init__(self, html):
+                self.html = html
+                self.meta = {}
+
+            def css(self, selector):
+                soup = BeautifulSoup(self.html, "html.parser")
+                results = soup.select(selector)
+                return [self._element_to_mock(e) for e in results]
+
+            def _element_to_mock(self, elem):
+                class MockElem:
+                    def __init__(self, el):
+                        self._el = el
+                        self.text = el.get_text(strip=True)
+                        self.attrib = {"href": el.get("href", "")}
+
+                    def css(self, selector):
+                        return [MockElem(e) for e in self._el.select(selector)]
+
+                return MockElem(elem)
+
+            def follow(self, url, callback, meta=None):
+                req = Request(url, callback=callback)
+                req.meta = meta or {}
+                return req
+
+        response = MockResponse(html)
+        response.meta = {"date": "2026/03/04", "racecourse": "HV", "race_no": 1}
+
+        results = []
+        async for item in spider.parse_race(response):
+            results.append(item)
+
+        # Should have: races, performance, and the follow request
+        assert len(results) >= 2
+
+        # Check we have the expected data items
+        tables = [r["table"] for r in results if isinstance(r, dict) and "table" in r]
+        assert "races" in tables
+        assert "performance" in tables
+
+        # Find the follow request
+        follow_requests = [r for r in results if hasattr(r, 'url') or hasattr(r, 'callback')]
+        assert len(follow_requests) == 1
+        follow_req = follow_requests[0]
+
+        assert follow_req.callback == spider._fetch_profiles
+        assert "horse_ids" in follow_req.meta
+        assert "jockey_ids" in follow_req.meta
+        assert "trainer_ids" in follow_req.meta
+
+        # Verify IDs were collected
+        assert "HK_2024_K306" in follow_req.meta["horse_ids"]
+        assert "BH" in follow_req.meta["jockey_ids"]
+        assert "FC" in follow_req.meta["trainer_ids"]
 
 
 class TestProfileParsers:

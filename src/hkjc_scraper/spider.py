@@ -73,12 +73,43 @@ class HKJCRacingSpider(Spider):
         race_data = self._parse_race_metadata(response, date, racecourse, race_no)
         yield {"table": "races", "data": race_data}
         race_id = race_data["race_id"]
+
+        # Collect profile IDs during performance parsing
+        horse_ids = set()
+        jockey_ids = set()
+        trainer_ids = set()
+
+        # Parse performance table and collect IDs
         for perf_item in self._parse_performance_table(response, race_id):
             yield perf_item
+            # Collect IDs
+            data = perf_item.get("data", {})
+            if data.get("horse_id"):
+                horse_ids.add(data["horse_id"])
+            if data.get("jockey_id"):
+                jockey_ids.add(data["jockey_id"])
+            if data.get("trainer_id"):
+                trainer_ids.add(data["trainer_id"])
+
+        # Parse dividends and incidents
         for div_item in self._parse_dividends(response, race_id):
             yield div_item
         for inc_item in self._parse_incidents(response, race_id):
             yield inc_item
+
+        # Yield profile fetching request
+        yield response.follow(
+            f"{self.BASE_URL}?racedate={date}&Racecourse={racecourse}&RaceNo={race_no}",
+            callback=self._fetch_profiles,
+            meta={
+                "date": date,
+                "racecourse": racecourse,
+                "race_no": race_no,
+                "horse_ids": horse_ids,
+                "jockey_ids": jockey_ids,
+                "trainer_ids": trainer_ids,
+            }
+        )
 
     def _parse_race_metadata(self, response, date: str, racecourse: str, race_no: int) -> dict:
         """Extract race metadata from the race page response.
