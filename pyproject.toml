@@ -16,6 +16,9 @@ test = [
     "beautifulsoup4>=4.12",
 ]
 
+[project.scripts]
+hkjc-scrape = "hkjc_scraper.cli:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
