@@ -29,6 +29,10 @@ class HKJCRacingSpider(Spider):
         super().__init__(**kwargs)
         self.dates = dates
         self.racecourse = racecourse
+        # Initialize deduplication sets
+        self._seen_horses = set()
+        self._seen_jockeys = set()
+        self._seen_trainers = set()
 
     async def start_requests(self):
         if self.dates:

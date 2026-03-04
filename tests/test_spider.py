@@ -490,6 +490,20 @@ class TestErrorHandling:
         assert clean_position(" ") == ""
 
 
+class TestDeduplicationSets:
+    """Test deduplication set initialization."""
+
+    def test_spider_has_deduplication_sets(self):
+        """Test that spider initializes deduplication sets."""
+        spider = HKJCRacingSpider()
+        assert hasattr(spider, "_seen_horses")
+        assert hasattr(spider, "_seen_jockeys")
+        assert hasattr(spider, "_seen_trainers")
+        assert isinstance(spider._seen_horses, set)
+        assert isinstance(spider._seen_jockeys, set)
+        assert isinstance(spider._seen_trainers, set)
+
+
 class TestPerformanceIdsExtraction:
     """Test jockey_id and trainer_id extraction from performance table."""
 
