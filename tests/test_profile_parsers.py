@@ -5,6 +5,7 @@ from hkjc_scraper.profile_parsers import (
     extract_trainer_id,
     parse_horse_profile,
     parse_jockey_profile,
+    parse_trainer_profile,
 )
 
 def test_extract_horse_id_from_href():
@@ -310,3 +311,115 @@ def test_parse_jockey_profile_with_missing_data():
     assert result["season_stats"]["places"] is None
     assert result["season_stats"]["win_rate"] is None
     assert result["season_stats"]["prize_money"] is None
+
+
+def test_parse_trainer_profile_basic_info():
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            self.text = """
+                背景： Test background
+                成就： Test achievements
+                在港累積1166場勝出率百分之9.6
+            """
+            self.rows = [
+                MockRow(["年齡 ：", "58歲"]),
+                MockRow(["冠 ：", "37"]),
+                MockRow(["亞 ：", "27"]),
+                MockRow(["季 ：", "22"]),
+                MockRow(["殿 ：", "22"]),
+                MockRow(["出馬總數 ：", "310"]),
+                MockRow(["勝出率 ：", "11.94%"]),
+                MockRow(["所贏獎金 ：", "$49,009,255"]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_trainer_profile(response, "FC", "方嘉柏")
+
+    assert result["trainer_id"] == "FC"
+    assert result["name"] == "方嘉柏"
+    assert result["age"] == 58
+    assert result["background"] == "Test background"
+    assert result["achievements"] == "Test achievements"
+    assert result["career_wins"] == 1166
+    assert result["career_win_rate"] == 9.6
+    assert result["season_stats"]["wins"] == 37
+    assert result["season_stats"]["places"] == 27
+    assert result["season_stats"]["shows"] == 22
+    assert result["season_stats"]["fourth"] == 22
+    assert result["season_stats"]["total_runners"] == 310
+    assert result["season_stats"]["win_rate"] == 11.94
+    assert result["season_stats"]["prize_money"] == 49009255
+
+
+def test_parse_trainer_profile_with_none_response():
+    """Test that None response is handled gracefully."""
+    result = parse_trainer_profile(None, "FC", "Test Trainer")
+    assert result["trainer_id"] == "FC"
+    assert result["name"] == "Test Trainer"
+
+
+def test_parse_trainer_profile_with_invalid_response():
+    """Test that invalid response object is handled gracefully."""
+    class InvalidResponse:
+        pass  # No css or text attributes
+
+    result = parse_trainer_profile(InvalidResponse(), "FC", "Test Trainer")
+    assert result["trainer_id"] == "FC"
+    assert result["name"] == "Test Trainer"
+
+
+def test_parse_trainer_profile_with_missing_data():
+    """Test that missing data fields are handled gracefully."""
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            self.text = "Some text without proper patterns"
+            self.rows = [
+                MockRow(["冠 ：", ""]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_trainer_profile(response, "FC", "Test Trainer")
+
+    assert result["trainer_id"] == "FC"
+    assert result["name"] == "Test Trainer"
+    assert result["age"] is None
+    assert result["background"] is None
+    assert result["achievements"] is None
+    assert result["career_wins"] is None
+    assert result["career_win_rate"] is None
+    assert result["season_stats"]["wins"] is None
+    assert result["season_stats"]["places"] is None
+    assert result["season_stats"]["shows"] is None
+    assert result["season_stats"]["fourth"] is None
+    assert result["season_stats"]["total_runners"] is None
+    assert result["season_stats"]["win_rate"] is None
+    assert result["season_stats"]["prize_money"] is None
+
