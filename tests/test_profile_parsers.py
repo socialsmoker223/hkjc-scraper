@@ -84,3 +84,126 @@ def test_parse_horse_profile_basic_info():
     assert result["career_record"]["places"] == 0
     assert result["career_record"]["shows"] == 2
     assert result["career_record"]["total"] == 16
+
+
+def test_parse_horse_profile_with_none_response():
+    """Test that None response is handled gracefully."""
+    result = parse_horse_profile(None, "HK_2024_K306", "Test Horse")
+    assert result["horse_id"] == "HK_2024_K306"
+    assert result["name"] == "Test Horse"
+
+
+def test_parse_horse_profile_with_invalid_response():
+    """Test that invalid response object (missing css/text) is handled gracefully."""
+    class InvalidResponse:
+        pass  # No css or text attributes
+
+    result = parse_horse_profile(InvalidResponse(), "HK_2024_K306", "Test Horse")
+    assert result["horse_id"] == "HK_2024_K306"
+    assert result["name"] == "Test Horse"
+
+
+def test_parse_horse_profile_with_malformed_rating():
+    """Test that non-numeric ratings are handled gracefully."""
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            self.text = "冠-亞-季-總出賽次數 5-3-2-15"
+            self.rows = [
+                MockRow(["現時評分 ：", "N/A"]),
+                MockRow(["季初評分 ：", ""]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_horse_profile(response, "HK_2024_K306", "Test Horse")
+
+    assert result["current_rating"] is None
+    assert result["initial_rating"] is None
+
+
+def test_parse_horse_profile_with_empty_data_fields():
+    """Test that empty data fields are handled gracefully."""
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            # No career record in text
+            self.text = "Some random text 1-2-3-4 without proper label"
+            self.rows = [
+                MockRow(["出生地/馬齡 ：", ""]),
+                MockRow(["父系 ：", ""]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_horse_profile(response, "HK_2024_K306", "Test Horse")
+
+    # Empty strings are skipped by the parser (line 70: if not value)
+    # so default None values are retained
+    assert result["country_of_birth"] is None
+    assert result["sire"] is None
+    # Career record should remain at default (no match without proper label)
+    assert result["career_record"]["wins"] == 0
+    assert result["career_record"]["places"] == 0
+    assert result["career_record"]["shows"] == 0
+    assert result["career_record"]["total"] == 0
+
+
+def test_parse_horse_profile_career_record_not_matched_without_label():
+    """Test that career record regex only matches with proper Chinese label."""
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self, text):
+            self.text = text
+            self.rows = []
+
+        def css(self, selector):
+            return self.rows
+
+    # Text with pattern but no label - should NOT match
+    response = MockResponse("Some random 10-5-3-25 numbers in text")
+    result = parse_horse_profile(response, "HK_2024_K306", "Test Horse")
+    assert result["career_record"]["wins"] == 0
+    assert result["career_record"]["total"] == 0
+
+    # Text with proper label - SHOULD match
+    response2 = MockResponse("冠-亞-季-總出賽次數 10-5-3-25")
+    result2 = parse_horse_profile(response2, "HK_2024_K306", "Test Horse")
+    assert result2["career_record"]["wins"] == 10
+    assert result2["career_record"]["places"] == 5
+    assert result2["career_record"]["shows"] == 3
+    assert result2["career_record"]["total"] == 25

@@ -34,6 +34,13 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
     Returns:
         Dictionary with horse profile data
     """
+    # Input validation guard clause
+    if response is None or not hasattr(response, 'css') or not hasattr(response, 'text'):
+        return {
+            "horse_id": horse_id,
+            "name": horse_name,
+        }
+
     result = {
         "horse_id": horse_id,
         "name": horse_name,
@@ -121,7 +128,7 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
 
     # Parse career record from response.text using regex
     # Format: "冠-亞-季-總出賽次數 X-X-X-X"
-    career_match = re.search(r'(\d+)-(\d+)-(\d+)-(\d+)', response.text)
+    career_match = re.search(r'冠-亞-季-總出賽次數\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
     if career_match:
         result["career_record"] = {
             "wins": int(career_match.group(1)),
