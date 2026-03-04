@@ -561,3 +561,56 @@ class TestPerformanceIdsExtraction:
         assert len(results) == 1
         assert results[0]["data"]["jockey_id"] == "BH"
         assert results[0]["data"]["trainer_id"] == "FC"
+
+
+class TestProfileParsers:
+    """Test profile parser callback methods."""
+
+    @pytest.mark.asyncio
+    async def test_parse_horse_profile_yields_correct_table(self):
+        """Test that parse_horse_profile yields horses table."""
+        from bs4 import BeautifulSoup
+
+        class MockResponse:
+            def __init__(self, html):
+                self.html = html
+                self.meta = {}
+
+            @property
+            def text(self):
+                return self.html
+
+            def css(self, selector):
+                soup = BeautifulSoup(self.html, "html.parser")
+                results = soup.select(selector)
+                return [self._element_to_mock(e) for e in results]
+
+            def _element_to_mock(self, elem):
+                class MockElem:
+                    def __init__(self, el):
+                        self._el = el
+                        self.text = el.get_text(strip=True)
+                        self.attrib = {"href": el.get("href", "")}
+
+                    def css(self, selector):
+                        return [MockElem(e) for e in self._el.select(selector)]
+
+                return MockElem(elem)
+
+        spider = HKJCRacingSpider()
+        spider._seen_horses.add("HK_2024_K306")
+
+        html = '<div><table><tr><td>父系 :</td><td>Tivaci</td></tr></table></div>'
+        response = MockResponse(html)
+        response.meta = {"horse_id": "HK_2024_K306", "horse_name": "堅多福"}
+
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_horse_profile(response):
+                items.append(item)
+
+        await collect_items()
+        assert len(items) == 1
+        assert items[0]["table"] == "horses"
+        assert items[0]["data"]["horse_id"] == "HK_2024_K306"

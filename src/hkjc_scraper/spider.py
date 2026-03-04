@@ -11,6 +11,12 @@ from hkjc_scraper.parsers import (
     generate_race_id,
 )
 
+from hkjc_scraper.profile_parsers import (
+    parse_horse_profile as parse_horse_profile_data,
+    parse_jockey_profile as parse_jockey_profile_data,
+    parse_trainer_profile as parse_trainer_profile_data,
+)
+
 # Racecourse code to full name mapping
 _RACECOURSE_NAMES = {
     "ST": "沙田",
@@ -341,6 +347,36 @@ class HKJCRacingSpider(Spider):
     async def parse(self, response):
         """Default parse method required by Spider base class."""
         yield  # Make this a generator for type checkers
+
+    async def parse_horse_profile(self, response):
+        """Parse horse profile page and yield horse data."""
+        meta = response.meta
+        horse_id = meta.get("horse_id")
+        horse_name = meta.get("horse_name", "")
+
+        profile_data = parse_horse_profile_data(response, horse_id, horse_name)
+        profile_data["horse_id"] = horse_id
+        yield {"table": "horses", "data": profile_data}
+
+    async def parse_jockey_profile(self, response):
+        """Parse jockey profile page and yield jockey data."""
+        meta = response.meta
+        jockey_id = meta.get("jockey_id")
+        jockey_name = meta.get("jockey_name", "")
+
+        profile_data = parse_jockey_profile_data(response, jockey_id, jockey_name)
+        profile_data["jockey_id"] = jockey_id
+        yield {"table": "jockeys", "data": profile_data}
+
+    async def parse_trainer_profile(self, response):
+        """Parse trainer profile page and yield trainer data."""
+        meta = response.meta
+        trainer_id = meta.get("trainer_id")
+        trainer_name = meta.get("trainer_name", "")
+
+        profile_data = parse_trainer_profile_data(response, trainer_id, trainer_name)
+        profile_data["trainer_id"] = trainer_id
+        yield {"table": "trainers", "data": profile_data}
 
     async def run(self):
         """Run the spider and collect all results.
