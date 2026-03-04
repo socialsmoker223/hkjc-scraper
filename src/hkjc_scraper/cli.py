@@ -4,7 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from hkjc_scraper.spider_v2 import HKJCRacingSpider
+from hkjc_scraper.spider import HKJCRacingSpider
 
 
 def group_items_by_table(items: list) -> dict:

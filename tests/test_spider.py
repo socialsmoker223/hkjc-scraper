@@ -1,7 +1,7 @@
 """Tests for HKJCRacingSpider."""
 import pytest
 from scrapling.spiders import Spider
-from hkjc_scraper.spider_v2 import HKJCRacingSpider
+from hkjc_scraper.spider import HKJCRacingSpider
 
 
 class TestSpiderClass:

@@ -34,7 +34,7 @@ uv run hkjc-scrape --racecourse ST
 
 ```python
 import asyncio
-from hkjc_scraper.spider_v2 import HKJCRacingSpider
+from hkjc_scraper.spider import HKJCRacingSpider
 
 async def main():
     spider = HKJCRacingSpider(

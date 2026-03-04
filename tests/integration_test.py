@@ -1,6 +1,6 @@
 """Integration tests for HKJC spider."""
 import pytest
-from hkjc_scraper.spider_v2 import HKJCRacingSpider
+from hkjc_scraper.spider import HKJCRacingSpider
 
 
 @pytest.mark.integration
