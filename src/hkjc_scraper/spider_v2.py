@@ -325,3 +325,23 @@ class HKJCRacingSpider(Spider):
     async def parse(self, response):
         """Default parse method required by Spider base class."""
         yield  # Make this a generator for type checkers
+
+    async def run(self):
+        """Run the spider and collect all results.
+
+        Returns:
+            A result object with items and stats attributes.
+        """
+        items = []
+        stats = None
+        async for item in self.stream():
+            items.append(item)
+            # Capture stats during the crawl
+            stats = self.stats
+
+        class Result:
+            def __init__(self, items, stats):
+                self.items = items
+                self.stats = stats
+
+        return Result(items, stats)

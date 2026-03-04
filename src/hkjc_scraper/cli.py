@@ -37,7 +37,7 @@ async def crawl_race(date: str | None = None, racecourse: str = "ST", output_dir
         Dictionary with table names as keys and lists of scraped data
     """
     spider = HKJCRacingSpider(dates=[date] if date else None, racecourse=racecourse)
-    result = spider.run()
+    result = await spider.run()
     grouped = group_items_by_table(result.items)
 
     # Create output directory
