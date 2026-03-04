@@ -576,7 +576,8 @@ class TestPerformanceIdsExtraction:
 class TestFetchProfiles:
     """Test _fetch_profiles method that yields profile page requests."""
 
-    def test_fetch_profile_requests_yields_unique_requests(self):
+    @pytest.mark.asyncio
+    async def test_fetch_profile_requests_yields_unique_requests(self):
         """Test that _fetch_profiles yields requests for unique profiles."""
         spider = HKJCRacingSpider()
 
@@ -590,7 +591,9 @@ class TestFetchProfiles:
                 }
 
         mock_response = MockResponse()
-        requests = list(spider._fetch_profiles(mock_response))
+        requests = []
+        async for req in spider._fetch_profiles(mock_response):
+            requests.append(req)
 
         # Should yield 6 requests (2 horses + 2 jockeys + 2 trainers)
         assert len(requests) == 6
@@ -604,10 +607,13 @@ class TestFetchProfiles:
         assert "SCS" in spider._seen_trainers
 
         # Second call with same IDs should yield no requests (all seen)
-        requests2 = list(spider._fetch_profiles(mock_response))
+        requests2 = []
+        async for req in spider._fetch_profiles(mock_response):
+            requests2.append(req)
         assert len(requests2) == 0
 
-    def test_fetch_profiles_respects_already_seen_ids(self):
+    @pytest.mark.asyncio
+    async def test_fetch_profiles_respects_already_seen_ids(self):
         """Test that _fetch_profiles respects IDs already in seen sets."""
         spider = HKJCRacingSpider()
 
@@ -626,7 +632,9 @@ class TestFetchProfiles:
                 }
 
         mock_response = MockResponse()
-        requests = list(spider._fetch_profiles(mock_response))
+        requests = []
+        async for req in spider._fetch_profiles(mock_response):
+            requests.append(req)
 
         # Should yield only 3 requests (the unseen ones)
         assert len(requests) == 3
@@ -638,11 +646,11 @@ class TestFetchProfiles:
 
 
 class TestParseRaceCollectsProfileIds:
-    """Test that parse_race collects profile IDs and yields profile fetch request."""
+    """Test that parse_race collects profile IDs and yields profile fetch requests."""
 
     @pytest.mark.asyncio
     async def test_parse_race_collects_profile_ids(self):
-        """Test that parse_race collects profile IDs and yields profile fetch request."""
+        """Test that parse_race collects profile IDs and yields profile fetch requests."""
         from bs4 import BeautifulSoup
         from scrapling.spiders import Request
 
@@ -706,28 +714,28 @@ class TestParseRaceCollectsProfileIds:
         async for item in spider.parse_race(response):
             results.append(item)
 
-        # Should have: races, performance, and the follow request
-        assert len(results) >= 2
+        # Should have: races, performance, and 3 profile requests
+        assert len(results) >= 5
 
         # Check we have the expected data items
         tables = [r["table"] for r in results if isinstance(r, dict) and "table" in r]
         assert "races" in tables
         assert "performance" in tables
 
-        # Find the follow request
-        follow_requests = [r for r in results if hasattr(r, 'url') or hasattr(r, 'callback')]
-        assert len(follow_requests) == 1
-        follow_req = follow_requests[0]
+        # Find the profile requests
+        profile_requests = [r for r in results if hasattr(r, 'url') or hasattr(r, 'callback')]
+        assert len(profile_requests) == 3
 
-        assert follow_req.callback == spider._fetch_profiles
-        assert "horse_ids" in follow_req.meta
-        assert "jockey_ids" in follow_req.meta
-        assert "trainer_ids" in follow_req.meta
+        # Verify we have one request for each profile type
+        urls = [r.url for r in profile_requests]
+        assert any("horseid=HK_2024_K306" in u for u in urls)
+        assert any("jockeyid=BH" in u for u in urls)
+        assert any("trainerid=FC" in u for u in urls)
 
-        # Verify IDs were collected
-        assert "HK_2024_K306" in follow_req.meta["horse_ids"]
-        assert "BH" in follow_req.meta["jockey_ids"]
-        assert "FC" in follow_req.meta["trainer_ids"]
+        # Verify IDs are in seen sets
+        assert "HK_2024_K306" in spider._seen_horses
+        assert "BH" in spider._seen_jockeys
+        assert "FC" in spider._seen_trainers
 
 
 class TestProfileParsers:
