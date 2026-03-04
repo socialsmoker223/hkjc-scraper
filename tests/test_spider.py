@@ -451,3 +451,40 @@ class TestIncidentsParser:
         if inc_items:
             inc_data = inc_items[0]["data"]
             assert "incident_report" in inc_data
+
+
+class TestErrorHandling:
+    """Test error handling."""
+
+    @pytest.mark.asyncio
+    async def test_parse_race_handles_missing_tables(self):
+        """Test that parse_race handles pages with no data tables gracefully."""
+        empty_html = "<html><body>No tables</body></html>"
+
+        class EmptyResponse:
+            def __init__(self):
+                self.text = empty_html
+                self.meta = {"date": "2026/03/01", "racecourse": "ST", "race_no": 1}
+
+            def css(self, selector):
+                return []
+
+        spider = HKJCRacingSpider()
+        response = EmptyResponse()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(response):
+                items.append(item)
+
+        await collect_items()
+        # Should still yield the races table with metadata even if no other tables exist
+        assert len(items) >= 1
+        assert items[0]["table"] == "races"
+
+    def test_clean_position_handles_empty(self):
+        """Test that clean_position handles empty and None values."""
+        from hkjc_scraper.parsers import clean_position
+        assert clean_position("") == ""
+        assert clean_position(None) == ""
+        assert clean_position(" ") == ""

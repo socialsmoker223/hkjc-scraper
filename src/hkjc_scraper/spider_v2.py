@@ -189,6 +189,18 @@ class HKJCRacingSpider(Spider):
 
         return race_data
 
+    def _validate_performance_item(self, item: dict) -> bool:
+        """Validate that a performance item has required fields.
+
+        Args:
+            item: Dictionary containing performance data
+
+        Returns:
+            True if item has all required fields with non-empty values
+        """
+        required_fields = ["race_id", "horse_no"]
+        return all(item.get(field) for field in required_fields)
+
     def _parse_performance_table(self, response, race_id: str):
         """Extract performance (horse results) table.
 
@@ -206,38 +218,42 @@ class HKJCRacingSpider(Spider):
         for row in rows:
             cells = row.css("td")
             if len(cells) >= 12:
-                horse_link = cells[2].css("a")
-                horse_name = ""
-                horse_id = None
-                if horse_link:
-                    horse_name = horse_link[0].text.strip()
-                    href = horse_link[0].attrib.get("href", "")
-                    if "horseid=" in href:
-                        horse_id = href.split("horseid=")[1].split("&")[0]
-                jockey_link = cells[3].css("a")
-                jockey = jockey_link[0].text.strip() if jockey_link else ""
-                trainer_link = cells[4].css("a")
-                trainer = trainer_link[0].text.strip() if trainer_link else ""
-                pos_text = cells[0].text.strip()
-                position = clean_position(pos_text) if pos_text else ""
-                running_pos = parse_running_position(cells[9])
-                performance = {
-                    "race_id": race_id,
-                    "position": position,
-                    "horse_no": cells[1].text.strip(),
-                    "horse_id": horse_id,
-                    "horse_name": horse_name,
-                    "jockey": jockey,
-                    "trainer": trainer,
-                    "actual_weight": cells[5].text.strip(),
-                    "body_weight": cells[6].text.strip(),
-                    "draw": cells[7].text.strip(),
-                    "margin": cells[8].text.strip(),
-                    "running_position": running_pos,
-                    "finish_time": cells[10].text.strip(),
-                    "win_odds": cells[11].text.strip()
-                }
-                yield {"table": "performance", "data": performance}
+                try:
+                    horse_link = cells[2].css("a")
+                    horse_name = ""
+                    horse_id = None
+                    if horse_link:
+                        horse_name = horse_link[0].text.strip()
+                        href = horse_link[0].attrib.get("href", "")
+                        if "horseid=" in href:
+                            horse_id = href.split("horseid=")[1].split("&")[0]
+                    jockey_link = cells[3].css("a")
+                    jockey = jockey_link[0].text.strip() if jockey_link else ""
+                    trainer_link = cells[4].css("a")
+                    trainer = trainer_link[0].text.strip() if trainer_link else ""
+                    pos_text = cells[0].text.strip()
+                    position = clean_position(pos_text) if pos_text else ""
+                    running_pos = parse_running_position(cells[9])
+                    performance = {
+                        "race_id": race_id,
+                        "position": position,
+                        "horse_no": cells[1].text.strip(),
+                        "horse_id": horse_id,
+                        "horse_name": horse_name,
+                        "jockey": jockey,
+                        "trainer": trainer,
+                        "actual_weight": cells[5].text.strip(),
+                        "body_weight": cells[6].text.strip(),
+                        "draw": cells[7].text.strip(),
+                        "margin": cells[8].text.strip(),
+                        "running_position": running_pos,
+                        "finish_time": cells[10].text.strip(),
+                        "win_odds": cells[11].text.strip()
+                    }
+                    if self._validate_performance_item(performance):
+                        yield {"table": "performance", "data": performance}
+                except Exception:
+                    continue
 
     def _parse_dividends(self, response, race_id: str):
         """Extract dividends table.

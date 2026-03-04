@@ -19,11 +19,11 @@ _CHINESE_NUMERALS = {
 }
 
 
-def clean_position(position: str) -> str:
+def clean_position(text: str | None) -> str:
     """Clean position text by extracting digits.
 
     Args:
-        position: Raw position text (e.g., "1", "1 ", "第一名", "1/2")
+        text: Raw position text (e.g., "1", "1 ", "第一名", "1/2") or None
 
     Returns:
         Cleaned position string containing only digits, or empty string if none found.
@@ -37,17 +37,19 @@ def clean_position(position: str) -> str:
         "12"
         >>> clean_position("")
         ""
+        >>> clean_position(None)
+        ""
     """
-    if not position:
+    if not text:
         return ""
 
     # First check for Chinese numerals (like "第一名", "第二名", etc.)
     for chinese, digit in _CHINESE_NUMERALS.items():
-        if chinese in position:
+        if chinese in text:
             return digit
 
     # Extract all digits from the string
-    digits = re.sub(r'[^\d]', '', position)
+    digits = re.sub(r'[^\d]', '', text)
     return digits
 
 
