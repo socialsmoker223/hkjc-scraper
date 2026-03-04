@@ -87,7 +87,7 @@ class TestRaceMetadataParser:
 
         # Check rating parsing
         assert "rating" in race_data
-        assert race_data["rating"] == {"min": 60, "max": 40}
+        assert race_data["rating"] == {"high": 60, "low": 40}
 
     @pytest.mark.asyncio
     async def test_parse_race_extracts_track_info(self, sample_race_response):
@@ -194,3 +194,26 @@ class TestRaceMetadataParser:
 
         assert "racecourse" in race_data
         assert race_data["racecourse"] == "沙田"
+
+    @pytest.mark.asyncio
+    async def test_parse_race_full_racecourse_name_hv(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        # Test HV (Happy Valley)
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "HV",
+            "race_no": 1
+        }
+
+        await collect_items()
+        race_items = [i for i in items if i.get("table") == "races"]
+        race_data = race_items[0]["data"]
+
+        assert "racecourse" in race_data
+        assert race_data["racecourse"] == "谷草"

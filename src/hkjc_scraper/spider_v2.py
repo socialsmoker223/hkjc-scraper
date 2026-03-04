@@ -115,12 +115,14 @@ class HKJCRacingSpider(Spider):
             if distance_match:
                 race_data["distance"] = int(distance_match.group(1))
 
-            # Extract rating ((min-max) or full-width version)
+            # Extract rating ((high-low) or full-width version)
+            # HKJC displays ratings as "(60-40)" where 60 is the higher rating
+            # and 40 is the lower rating for horses eligible for this race
             rating_match = re.search(r'[(\uff08](\d+)-(\d+)[)\uff09]', first_cell_text)
             if rating_match:
                 race_data["rating"] = {
-                    "min": int(rating_match.group(1)),
-                    "max": int(rating_match.group(2)),
+                    "high": int(rating_match.group(1)),
+                    "low": int(rating_match.group(2)),
                 }
 
             # Case 2: Field label in second cell, value in third cell
@@ -154,35 +156,29 @@ class HKJCRacingSpider(Spider):
                     if sectional_times:
                         race_data["sectional_times"] = sectional_times
 
-        # Extract race name from the row containing it
-        # Usually in a row by itself or with prize money
+        # Extract race name and prize money
+        # The race name is typically in the first cell of a row,
+        # and the prize money (HK$) is in the first cell of another row.
+        # The race name row often has "賽道 :" in the second cell.
         for row in race_tables:
             cells = row.css("td")
-            for cell in cells:
-                cell_text = cell.text if cell.text else ""
-                # Check if it looks like a race name (not starting with HK$ or numbers)
-                if cell_text and not cell_text.startswith("HK$") and not cell_text.startswith("場地") and not cell_text.startswith("賽道") and not cell_text.startswith("時間") and not cell_text.startswith("分段"):
-                    # Check if it doesn't contain patterns we've already captured
-                    if not re.search(r'第[一二三四五六七八九]班', cell_text) and not re.search(r'\d+米', cell_text) and "場地狀況" not in cell_text and "賽道" not in cell_text:
-                        # This could be the race name
-                        if len(cell_text) > 3 and cell_text[:4] not in race_data.values():
-                            race_data["race_name"] = cell_text
-                            break
-            if "race_name" in race_data:
-                break
+            if len(cells) < 2:
+                continue
 
-        # Extract prize money (HK$ X,XXX,XXX)
-        for row in race_tables:
-            cells = row.css("td")
-            for cell in cells:
-                cell_text = cell.text if cell.text else ""
-                if "HK$" in cell_text or ("HK" in cell_text and "$" in cell_text):
-                    prize = parse_prize(cell_text)
-                    if prize > 0:
-                        race_data["prize_money"] = prize
-                        break
-            if "prize_money" in race_data:
-                break
+            first_cell_text = cells[0].text if cells[0].text else ""
+            second_cell_text = cells[1].text if len(cells) > 1 and cells[1].text else ""
+
+            # Check if this is the prize money row (HK$ X,XXX,XXX)
+            if "HK$" in first_cell_text or ("HK" in first_cell_text and "$" in first_cell_text):
+                prize = parse_prize(first_cell_text)
+                if prize > 0:
+                    race_data["prize_money"] = prize
+
+            # Check if this is the race name row (second cell is "賽道 :")
+            elif "賽道" in second_cell_text and ":" in second_cell_text:
+                # First cell should be the race name
+                if first_cell_text and len(first_cell_text) > 3:
+                    race_data["race_name"] = first_cell_text
 
         return race_data
 
