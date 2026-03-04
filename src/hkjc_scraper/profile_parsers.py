@@ -138,3 +138,109 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
         }
 
     return result
+
+
+def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dict:
+    """Parse jockey profile page response.
+
+    Args:
+        response: Scrapling response object (has .css() method and .text attribute)
+        jockey_id: Jockey ID from href
+        jockey_name: Jockey name from race results
+
+    Returns:
+        Dictionary with jockey profile data
+    """
+    # Input validation guard clause
+    if response is None or not hasattr(response, 'css') or not hasattr(response, 'text'):
+        return {
+            "jockey_id": jockey_id,
+            "name": jockey_name,
+        }
+
+    result = {
+        "jockey_id": jockey_id,
+        "name": jockey_name,
+        "age": None,
+        "background": None,
+        "achievements": None,
+        "career_wins": None,
+        "career_win_rate": None,
+        "season_stats": {
+            "wins": None,
+            "places": None,
+            "win_rate": None,
+            "prize_money": None,
+        },
+    }
+
+    full_text = response.text
+
+    # Parse background: text after "背景：" until "成就：" or end of line
+    # Match until the next label or end
+    background_match = re.search(r'背景[：:]\s*(.*?)(?=\s*成就[：:]|\n\s*[在成主]|$)', full_text, re.DOTALL)
+    if background_match:
+        result["background"] = background_match.group(1).strip()
+
+    # Parse achievements: text after "成就：" until "主要賽事冠軍：" or end of line
+    achievements_match = re.search(r'成就[：:]\s*(.*?)(?=\s*主要賽事冠軍[：:]|\n\s*在港累積|\n\s*[主在]|$)', full_text, re.DOTALL)
+    if achievements_match:
+        result["achievements"] = achievements_match.group(1).strip()
+
+    # Parse career stats: "在港累積XXX場勝出率：百分之XX.X" or "在港累積XXX場勝出率百分之XX.X"
+    career_match = re.search(r'在港累積.*?(\d+)場.*?勝出率[：:]*.*?百分之([\d.]+)', full_text)
+    if career_match:
+        result["career_wins"] = int(career_match.group(1))
+        result["career_win_rate"] = float(career_match.group(2))
+
+    # Parse season stats and age from table rows
+    rows = response.css("table tr")
+
+    for row in rows:
+        cells = row.css("td")
+        if len(cells) >= 2:
+            label = cells[0].text
+            value = cells[1].text
+
+            if not label or not value:
+                continue
+
+            # Parse age
+            if "年齡" in label:
+                age_match = re.search(r'(\d+)', value)
+                if age_match:
+                    try:
+                        result["age"] = int(age_match.group(1))
+                    except ValueError:
+                        result["age"] = None
+
+            # Parse season stats
+            elif "冠" in label and "：" in label:
+                try:
+                    result["season_stats"]["wins"] = int(value.strip())
+                except ValueError:
+                    result["season_stats"]["wins"] = None
+
+            elif "亞" in label and "：" in label:
+                try:
+                    result["season_stats"]["places"] = int(value.strip())
+                except ValueError:
+                    result["season_stats"]["places"] = None
+
+            elif "勝出率" in label:
+                # Extract percentage value, removing % symbol if present
+                win_rate_str = value.strip().replace("%", "")
+                try:
+                    result["season_stats"]["win_rate"] = float(win_rate_str)
+                except ValueError:
+                    result["season_stats"]["win_rate"] = None
+
+            elif "獎金" in label:
+                # Parse prize money: remove $ and commas
+                cleaned = value.strip().replace("$", "").replace(",", "")
+                try:
+                    result["season_stats"]["prize_money"] = int(cleaned)
+                except ValueError:
+                    result["season_stats"]["prize_money"] = None
+
+    return result

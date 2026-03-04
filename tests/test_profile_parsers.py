@@ -4,6 +4,7 @@ from hkjc_scraper.profile_parsers import (
     extract_jockey_id,
     extract_trainer_id,
     parse_horse_profile,
+    parse_jockey_profile,
 )
 
 def test_extract_horse_id_from_href():
@@ -207,3 +208,105 @@ def test_parse_horse_profile_career_record_not_matched_without_label():
     assert result2["career_record"]["places"] == 5
     assert result2["career_record"]["shows"] == 3
     assert result2["career_record"]["total"] == 25
+
+
+def test_parse_jockey_profile_basic_info():
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            self.text = """
+                背景： Test background text
+                成就： Test achievements
+                在港累積232場勝出率百分之12.4
+            """
+            self.rows = [
+                MockRow(["年齡 ：", "45歲"]),
+                MockRow(["冠 ：", "32"]),
+                MockRow(["亞 ：", "42"]),
+                MockRow(["勝出率 ：", "11.76%"]),
+                MockRow(["所贏獎金 ：", "$54,862,525"]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_jockey_profile(response, "BH", "布文")
+
+    assert result["jockey_id"] == "BH"
+    assert result["name"] == "布文"
+    assert result["age"] == 45
+    assert result["background"] == "Test background text"
+    assert result["achievements"] == "Test achievements"
+    assert result["career_wins"] == 232
+    assert result["career_win_rate"] == 12.4
+    assert result["season_stats"]["wins"] == 32
+    assert result["season_stats"]["places"] == 42
+    assert result["season_stats"]["win_rate"] == 11.76
+    assert result["season_stats"]["prize_money"] == 54862525
+
+
+def test_parse_jockey_profile_with_none_response():
+    """Test that None response is handled gracefully."""
+    result = parse_jockey_profile(None, "BH", "Test Jockey")
+    assert result["jockey_id"] == "BH"
+    assert result["name"] == "Test Jockey"
+
+
+def test_parse_jockey_profile_with_invalid_response():
+    """Test that invalid response object is handled gracefully."""
+    class InvalidResponse:
+        pass  # No css or text attributes
+
+    result = parse_jockey_profile(InvalidResponse(), "BH", "Test Jockey")
+    assert result["jockey_id"] == "BH"
+    assert result["name"] == "Test Jockey"
+
+
+def test_parse_jockey_profile_with_missing_data():
+    """Test that missing data fields are handled gracefully."""
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            self.text = "Some text without proper patterns"
+            self.rows = [
+                MockRow(["冠 ：", ""]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_jockey_profile(response, "BH", "Test Jockey")
+
+    assert result["jockey_id"] == "BH"
+    assert result["name"] == "Test Jockey"
+    assert result["age"] is None
+    assert result["background"] is None
+    assert result["achievements"] is None
+    assert result["career_wins"] is None
+    assert result["career_win_rate"] is None
+    assert result["season_stats"]["wins"] is None
+    assert result["season_stats"]["places"] is None
+    assert result["season_stats"]["win_rate"] is None
+    assert result["season_stats"]["prize_money"] is None
