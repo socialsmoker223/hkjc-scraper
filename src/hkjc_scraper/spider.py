@@ -109,6 +109,7 @@ class HKJCRacingSpider(Spider):
         for jockey_id in jockey_ids:
             if jockey_id not in self._seen_jockeys:
                 self._seen_jockeys.add(jockey_id)
+                # Note: HKJC uses uppercase 'Season' for jockey URLs
                 url = f"https://racing.hkjc.com/zh-hk/local/information/jockeyprofile?jockeyid={jockey_id}&Season=Current"
                 yield Request(url, callback=self.parse_jockey_profile, meta={"jockey_id": jockey_id})
 
@@ -116,6 +117,7 @@ class HKJCRacingSpider(Spider):
         for trainer_id in trainer_ids:
             if trainer_id not in self._seen_trainers:
                 self._seen_trainers.add(trainer_id)
+                # Note: HKJC uses lowercase 'season' for trainer URLs (site-specific parameter casing)
                 url = f"https://racing.hkjc.com/zh-hk/local/information/trainerprofile?trainerid={trainer_id}&season=Current"
                 yield Request(url, callback=self.parse_trainer_profile, meta={"trainer_id": trainer_id})
 
@@ -382,48 +384,6 @@ class HKJCRacingSpider(Spider):
                             "incident_report": cells[3].text.strip()
                         }
                         yield {"table": "incidents", "data": incident}
-
-    async def _fetch_profiles(self, response):
-        """Yield requests for unique profile pages.
-
-        Uses deduplication sets to avoid fetching the same profile multiple times.
-        """
-        horse_ids = response.meta.get("horse_ids", set())
-        jockey_ids = response.meta.get("jockey_ids", set())
-        trainer_ids = response.meta.get("trainer_ids", set())
-
-        # Fetch horse profiles
-        for horse_id in horse_ids:
-            if horse_id not in self._seen_horses:
-                self._seen_horses.add(horse_id)
-                url = f"https://racing.hkjc.com/zh-hk/local/information/horse?horseid={horse_id}"
-                yield Request(
-                    url,
-                    callback=self.parse_horse_profile,
-                    meta={"horse_id": horse_id}
-                )
-
-        # Fetch jockey profiles
-        for jockey_id in jockey_ids:
-            if jockey_id not in self._seen_jockeys:
-                self._seen_jockeys.add(jockey_id)
-                url = f"https://racing.hkjc.com/zh-hk/local/information/jockeyprofile?jockeyid={jockey_id}&Season=Current"
-                yield Request(
-                    url,
-                    callback=self.parse_jockey_profile,
-                    meta={"jockey_id": jockey_id}
-                )
-
-        # Fetch trainer profiles
-        for trainer_id in trainer_ids:
-            if trainer_id not in self._seen_trainers:
-                self._seen_trainers.add(trainer_id)
-                url = f"https://racing.hkjc.com/zh-hk/local/information/trainerprofile?trainerid={trainer_id}&season=Current"
-                yield Request(
-                    url,
-                    callback=self.parse_trainer_profile,
-                    meta={"trainer_id": trainer_id}
-                )
 
     async def parse(self, response):
         """Default parse method required by Spider base class."""

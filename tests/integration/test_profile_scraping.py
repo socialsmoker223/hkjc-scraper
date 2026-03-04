@@ -4,7 +4,12 @@ from hkjc_scraper.spider import HKJCRacingSpider
 
 @pytest.mark.integration
 async def test_profile_scraping_end_to_end():
-    """Test full profile scraping with live data."""
+    """Test full profile scraping with live data.
+
+    NOTE: This test uses a hardcoded date (2026/03/04). If this date has no race data,
+    update it to a date with known race data. The test expects at least one race with
+    horses, jockeys, and trainers at the Happy Valley (HV) racecourse.
+    """
     spider = HKJCRacingSpider(dates=["2026/03/04"], racecourse="HV")
     result = await spider.run()
 
