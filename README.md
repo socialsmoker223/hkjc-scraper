@@ -1,0 +1,87 @@
+# HKJC Racing Scraper
+
+Extract horse racing data from Hong Kong Jockey Club (HKJC) using Scrapling Spider.
+
+## Features
+
+- Race results with horse details, jockey, trainer
+- Dividends (Win, Place, Quinella, Tierce, Quartet, etc.)
+- Incident reports for each race
+- Historical data (auto-discover race dates)
+- Async crawling with concurrent requests
+- Normalized Supabase-compatible output
+
+## Installation
+
+```bash
+cd /home/jc/code/hkjc-scraper
+uv sync --extra test
+```
+
+## Usage
+
+### CLI
+
+```bash
+# Crawl specific date
+uv run hkjc-scrape --date 2026/03/01 --racecourse ST
+
+# Discover and crawl latest race
+uv run hkjc-scrape --racecourse ST
+```
+
+### Programmatic Usage
+
+```python
+import asyncio
+from hkjc_scraper.spider_v2 import HKJCRacingSpider
+
+async def main():
+    spider = HKJCRacingSpider(
+        dates=["2026/03/01"],
+        racecourse="ST"
+    )
+    result = await spider.run()
+    for item in result.items:
+        print(item["table"], item["data"])
+
+asyncio.run(main())
+```
+
+## Data Model
+
+### Tables
+- **races** - Race metadata (date, class, distance, going, prize)
+- **performance** - Horse results per race (position, time, odds)
+- **dividends** - Payout information by pool type
+- **incidents** - Race incident reports
+- **horses** - Horse profiles (placeholder for future)
+
+### Output Format
+Data is saved as JSON with UTF-8 encoding:
+```
+data/
+├── races_2026-03-01.json
+├── performance_2026-03-01.json
+├── dividends_2026-03-01.json
+└── incidents_2026-03-01.json
+```
+
+## Testing
+
+```bash
+# Run unit tests only
+uv run pytest tests/ -v -m "not integration"
+
+# Run integration tests (makes network requests)
+uv run pytest tests/ -v -m integration
+
+# Run all tests
+uv run pytest tests/ -v
+```
+
+## Architecture
+- Extends `scrapling.spiders.Spider` for async crawling
+- Auto-discovers race dates from site dropdown
+- Concurrent requests (5 by default) with rate limiting
+- Error handling with retry logic
