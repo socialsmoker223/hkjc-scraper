@@ -65,6 +65,8 @@ class HKJCRacingSpider(Spider):
         race_id = race_data["race_id"]
         for perf_item in self._parse_performance_table(response, race_id):
             yield perf_item
+        for div_item in self._parse_dividends(response, race_id):
+            yield div_item
 
     def _parse_race_metadata(self, response, date: str, racecourse: str, race_no: int) -> dict:
         """Extract race metadata from the race page response.
@@ -234,6 +236,34 @@ class HKJCRacingSpider(Spider):
                     "win_odds": cells[11].text.strip()
                 }
                 yield {"table": "performance", "data": performance}
+
+    def _parse_dividends(self, response, race_id: str):
+        """Extract dividends table.
+
+        Args:
+            response: The HTTP response object
+            race_id: Unique race identifier
+
+        Yields:
+            Dictionaries with "table": "dividends" and dividend data
+        """
+        for table in response.css("table.table_bd"):
+            header = table.css("thead tr td")
+            if header and "派彩" in header[0].text:
+                current_pool = None
+                for row in table.css("tbody tr"):
+                    cells = row.css("td")
+                    if len(cells) >= 3:
+                        first_cell = cells[0].text.strip()
+                        if first_cell:
+                            current_pool = first_cell
+                        dividend = {
+                            "race_id": race_id,
+                            "pool": current_pool,
+                            "winning_combination": cells[1].text.strip(),
+                            "payout": cells[2].text.strip()
+                        }
+                        yield {"table": "dividends", "data": dividend}
 
     async def parse(self, response):
         """Default parse method required by Spider base class."""

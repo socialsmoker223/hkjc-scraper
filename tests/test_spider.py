@@ -323,3 +323,26 @@ class TestPerformanceParser:
         assert second_place["horse_name"] == "同益善"
         assert second_place["horse_no"] == "7"
         assert second_place["margin"] == "3/4"
+
+
+class TestDividendsParser:
+    """Test dividends table parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_race_yields_dividends(self, sample_race_response):
+        spider = HKJCRacingSpider()
+        items = []
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+        await collect_items()
+        div_items = [i for i in items if i.get("table") == "dividends"]
+        assert len(div_items) > 0
+        div_data = div_items[0]["data"]
+        assert "pool" in div_data
+        assert "winning_combination" in div_data
