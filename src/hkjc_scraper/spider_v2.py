@@ -253,15 +253,27 @@ class HKJCRacingSpider(Spider):
                 current_pool = None
                 for row in table.css("tbody tr"):
                     cells = row.css("td")
-                    if len(cells) >= 3:
-                        first_cell = cells[0].text.strip()
-                        if first_cell:
-                            current_pool = first_cell
+                    # Handle rows with 3 cells (has pool name) or 2 cells (rowspan continuation)
+                    if len(cells) >= 2:
+                        if len(cells) >= 3:
+                            first_cell = cells[0].text.strip()
+                            if first_cell:
+                                current_pool = first_cell
+                            elif current_pool is None:
+                                continue  # Skip rows with no pool context
+                            winning_combination = cells[1].text.strip()
+                            payout = cells[2].text.strip()
+                        else:
+                            # Row has only 2 cells (first cell is rowspan from above)
+                            if current_pool is None:
+                                continue  # Skip rows with no pool context
+                            winning_combination = cells[0].text.strip()
+                            payout = cells[1].text.strip()
                         dividend = {
                             "race_id": race_id,
                             "pool": current_pool,
-                            "winning_combination": cells[1].text.strip(),
-                            "payout": cells[2].text.strip()
+                            "winning_combination": winning_combination,
+                            "payout": payout
                         }
                         yield {"table": "dividends", "data": dividend}
 

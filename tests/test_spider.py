@@ -346,3 +346,85 @@ class TestDividendsParser:
         div_data = div_items[0]["data"]
         assert "pool" in div_data
         assert "winning_combination" in div_data
+
+    @pytest.mark.asyncio
+    async def test_parse_dividends_rowspan_handling(self, sample_race_response):
+        """Test that rowspan entries for '位置' pool are handled correctly."""
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        await collect_items()
+        div_items = [i for i in items if i.get("table") == "dividends"]
+
+        # Filter for "位置" (Place) pool entries
+        place_dividends = [d for d in div_items if d["data"]["pool"] == "位置"]
+
+        # Should have 3 entries for "位置" (rowspan=3)
+        assert len(place_dividends) == 3
+
+    @pytest.mark.asyncio
+    async def test_parse_dividends_specific_pool_values(self, sample_race_response):
+        """Test that specific dividend values are extracted correctly."""
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        await collect_items()
+        div_items = [i for i in items if i.get("table") == "dividends"]
+
+        # Check 獨贏 (Win) pool
+        win_dividends = [d for d in div_items if d["data"]["pool"] == "獨贏"]
+        assert len(win_dividends) == 1
+        assert win_dividends[0]["data"]["winning_combination"] == "9"
+        assert win_dividends[0]["data"]["payout"] == "108.00"
+
+        # Check first 位置 (Place) entry
+        place_dividends = [d for d in div_items if d["data"]["pool"] == "位置"]
+        assert place_dividends[0]["data"]["winning_combination"] == "9"
+        assert place_dividends[0]["data"]["payout"] == "32.00"
+
+    @pytest.mark.asyncio
+    async def test_parse_dividends_all_pools_exist(self, sample_race_response):
+        """Test that all expected dividend pools are parsed."""
+        spider = HKJCRacingSpider()
+        items = []
+
+        async def collect_items():
+            async for item in spider.parse_race(sample_race_response):
+                items.append(item)
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        await collect_items()
+        div_items = [i for i in items if i.get("table") == "dividends"]
+
+        # Extract unique pool names
+        pools = set(d["data"]["pool"] for d in div_items)
+
+        # Verify key pools exist
+        assert "獨贏" in pools
+        assert "位置" in pools
+        assert "連贏" in pools
