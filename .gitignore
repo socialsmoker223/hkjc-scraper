@@ -8,3 +8,13 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Scraped output data
+data/
+*.json
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# Claude Code settings (optional - comment out if you want to track them)
+.claude/
