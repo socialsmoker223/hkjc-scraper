@@ -62,17 +62,18 @@ def test_parse_horse_profile_basic_info():
     class MockResponse:
         def __init__(self):
             self.text = "冠-亞-季-總出賽次數 1-0-2-16"
+            # Updated to 3-cell structure (label, ":", value)
             self.rows = [
-                MockRow(["出生地/馬齡 ：", "澳洲 3歲"]),
-                MockRow(["毛色/性別 ：", "棗色 閹馬"]),
-                MockRow(["父系 ：", "Tivaci"]),
-                MockRow(["母系 ：", "Promenade"]),
-                MockRow(["外祖父 ：", "Danehill"]),
-                MockRow(["馬主 ：", "Test Owner"]),
-                MockRow(["現時評分 ：", "82"]),
-                MockRow(["季初評分 ：", "58"]),
-                MockRow(["今季獎金 ：", "$795,375"]),
-                MockRow(["總獎金 ：", "$929,925"]),
+                MockRow(["出生地 / 馬齡", ":", "澳洲 / 3歲"]),
+                MockRow(["毛色 / 性別", ":", "棗 / 閹"]),
+                MockRow(["父系", ":", "Tivaci"]),
+                MockRow(["母系", ":", "Promenade"]),
+                MockRow(["外祖父", ":", "Danehill"]),
+                MockRow(["馬主", ":", "Test Owner"]),
+                MockRow(["現時評分", ":", "82"]),
+                MockRow(["季初評分", ":", "58"]),
+                MockRow(["今季獎金", ":", "$795,375"]),
+                MockRow(["總獎金", ":", "$929,925"]),
             ]
 
         def css(self, selector):
@@ -85,8 +86,8 @@ def test_parse_horse_profile_basic_info():
     assert result["name"] == "堅多福"
     assert result["country_of_birth"] == "澳洲"
     assert result["age"] == "3歲"
-    assert result["colour"] == "棗色"
-    assert result["gender"] == "閹馬"
+    assert result["colour"] == "棗"
+    assert result["gender"] == "閹"
     assert result["sire"] == "Tivaci"
     assert result["dam"] == "Promenade"
     assert result["damsire"] == "Danehill"
@@ -95,10 +96,11 @@ def test_parse_horse_profile_basic_info():
     assert result["initial_rating"] == 58
     assert result["season_prize"] == 795375
     assert result["total_prize"] == 929925
-    assert result["career_record"]["wins"] == 1
-    assert result["career_record"]["places"] == 0
-    assert result["career_record"]["shows"] == 2
-    assert result["career_record"]["total"] == 16
+    # Flattened career fields
+    assert result["wins"] == 1
+    assert result["places"] == 0
+    assert result["shows"] == 2
+    assert result["total"] == 16
 
 
 def test_parse_horse_profile_with_none_response():
@@ -116,6 +118,65 @@ def test_parse_horse_profile_with_invalid_response():
     result = parse_horse_profile(InvalidResponse(), "HK_2024_K306", "Test Horse")
     assert result["horse_id"] == "HK_2024_K306"
     assert result["name"] == "Test Horse"
+
+
+def test_parse_horse_profile_3_column_structure():
+    """Test parsing horse profile with correct 3-cell table structure (label, ':', value)."""
+    class MockCell:
+        def __init__(self, text):
+            self.text = text
+
+    class MockRow:
+        def __init__(self, cells):
+            self.cells = [MockCell(t) for t in cells]
+
+        def css(self, sel):
+            return self.cells
+
+    class MockResponse:
+        def __init__(self):
+            self.text = "冠-亞-季-總出賽次數 2-0-2-17"
+            # 3-cell structure: label, ":", value
+            self.rows = [
+                MockRow(["出生地 / 馬齡", ":", "紐西蘭 / 4"]),
+                MockRow(["毛色 / 性別", ":", "棗 / 閹"]),
+                MockRow(["父系", ":", "Tivaci"]),
+                MockRow(["母系", ":", "Promenade"]),
+                MockRow(["外祖父", ":", "Danehill"]),
+                MockRow(["練馬師", ":", "方嘉柏"]),
+                MockRow(["馬主", ":", "Test Owner"]),
+                MockRow(["現時評分", ":", "82"]),
+                MockRow(["季初評分", ":", "58"]),
+                MockRow(["今季獎金", ":", "$795,375"]),
+                MockRow(["總獎金", ":", "$929,925"]),
+            ]
+
+        def css(self, selector):
+            return self.rows
+
+    response = MockResponse()
+    result = parse_horse_profile(response, "HK_2024_K306", "堅多福")
+
+    assert result["horse_id"] == "HK_2024_K306"
+    assert result["name"] == "堅多福"
+    assert result["country_of_birth"] == "紐西蘭"
+    assert result["age"] == "4"
+    assert result["colour"] == "棗"
+    assert result["gender"] == "閹"
+    assert result["sire"] == "Tivaci"
+    assert result["dam"] == "Promenade"
+    assert result["damsire"] == "Danehill"
+    assert result["trainer"] == "方嘉柏"
+    assert result["owner"] == "Test Owner"
+    assert result["current_rating"] == 82
+    assert result["initial_rating"] == 58
+    assert result["season_prize"] == 795375
+    assert result["total_prize"] == 929925
+    # Flattened career fields
+    assert result["wins"] == 2
+    assert result["places"] == 0
+    assert result["shows"] == 2
+    assert result["total"] == 17
 
 
 def test_parse_horse_profile_with_malformed_rating():
@@ -182,10 +243,10 @@ def test_parse_horse_profile_with_empty_data_fields():
     assert result["country_of_birth"] is None
     assert result["sire"] is None
     # Career record should remain at default (no match without proper label)
-    assert result["career_record"]["wins"] == 0
-    assert result["career_record"]["places"] == 0
-    assert result["career_record"]["shows"] == 0
-    assert result["career_record"]["total"] == 0
+    assert result["wins"] == 0
+    assert result["places"] == 0
+    assert result["shows"] == 0
+    assert result["total"] == 0
 
 
 def test_parse_horse_profile_career_record_not_matched_without_label():
@@ -212,16 +273,16 @@ def test_parse_horse_profile_career_record_not_matched_without_label():
     # Text with pattern but no label - should NOT match
     response = MockResponse("Some random 10-5-3-25 numbers in text")
     result = parse_horse_profile(response, "HK_2024_K306", "Test Horse")
-    assert result["career_record"]["wins"] == 0
-    assert result["career_record"]["total"] == 0
+    assert result["wins"] == 0
+    assert result["total"] == 0
 
     # Text with proper label - SHOULD match
     response2 = MockResponse("冠-亞-季-總出賽次數 10-5-3-25")
     result2 = parse_horse_profile(response2, "HK_2024_K306", "Test Horse")
-    assert result2["career_record"]["wins"] == 10
-    assert result2["career_record"]["places"] == 5
-    assert result2["career_record"]["shows"] == 3
-    assert result2["career_record"]["total"] == 25
+    assert result2["wins"] == 10
+    assert result2["places"] == 5
+    assert result2["shows"] == 3
+    assert result2["total"] == 25
 
 
 def test_parse_jockey_profile_basic_info():

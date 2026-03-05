@@ -51,13 +51,25 @@ def parse_career_record(record_str: str) -> dict | None:
 def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
     """Parse horse profile page response.
 
+    The HKJC website uses a 3-column table structure:
+    - Column 0: Label (e.g., "出生地 / 馬齡")
+    - Column 1: Separator (":")
+    - Column 2: Value (e.g., "紐西蘭 / 4")
+
     Args:
         response: Scrapling response object (has .css() method and .text attribute)
         horse_id: Horse ID from href
         horse_name: Horse name from race results
 
     Returns:
-        Dictionary with horse profile data
+        Dictionary with horse profile data including:
+        - Basic info: horse_id, name, country_of_birth, age, colour, gender
+        - Pedigree: sire, dam, damsire
+        - Ownership: trainer, owner
+        - Ratings: current_rating, initial_rating
+        - Prize money: season_prize, total_prize
+        - Career stats: wins, places, shows, total (flattened)
+        - Import info: location, import_type, import_date (if applicable)
     """
     # Input validation guard clause
     if response is None or not hasattr(response, 'css') or not hasattr(response, 'text'):
@@ -76,42 +88,54 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
         "sire": None,
         "dam": None,
         "damsire": None,
+        "trainer": None,
         "owner": None,
         "current_rating": None,
         "initial_rating": None,
         "season_prize": None,
         "total_prize": None,
-        "career_record": {"wins": 0, "places": 0, "shows": 0, "total": 0},
+        # Flattened career fields
+        "wins": 0,
+        "places": 0,
+        "shows": 0,
+        "total": 0,
+        # Import information
+        "location": None,
+        "import_type": None,
+        "import_date": None,
     }
 
     rows = response.css("table tr")
 
     for row in rows:
         cells = row.css("td")
-        if len(cells) >= 2:
+        # HKJC uses 3-column structure: label, ":", value
+        if len(cells) >= 3:
             label = cells[0].text
-            value = cells[1].text
+            value = cells[2].text
 
             if not label or not value:
                 continue
 
-            # Parse country of birth and age: "出生地/馬齡"
-            if "出生地/馬齡" in label:
-                parts = value.strip().split()
+            # Parse country of birth and age: "出生地 / 馬齡"
+            # Value format: "紐西蘭 / 4" or similar
+            if "出生地" in label and "馬齡" in label:
+                parts = value.strip().split("/")
                 if len(parts) >= 2:
-                    result["country_of_birth"] = parts[0]
-                    result["age"] = parts[1]
+                    result["country_of_birth"] = parts[0].strip()
+                    result["age"] = parts[1].strip()
                 elif len(parts) == 1:
-                    result["country_of_birth"] = parts[0]
+                    result["country_of_birth"] = parts[0].strip()
 
-            # Parse colour and gender: "毛色/性別"
-            elif "毛色/性別" in label:
-                parts = value.strip().split()
+            # Parse colour and gender: "毛色 / 性別"
+            # Value format: "棗 / 閹" or similar
+            elif "毛色" in label and "性別" in label:
+                parts = value.strip().split("/")
                 if len(parts) >= 2:
-                    result["colour"] = parts[0]
-                    result["gender"] = parts[1]
+                    result["colour"] = parts[0].strip()
+                    result["gender"] = parts[1].strip()
                 elif len(parts) == 1:
-                    result["colour"] = parts[0]
+                    result["colour"] = parts[0].strip()
 
             # Parse pedigree: "父系", "母系", "外祖父"
             elif "父系" in label:
@@ -120,6 +144,10 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
                 result["dam"] = value.strip()
             elif "外祖父" in label:
                 result["damsire"] = value.strip()
+
+            # Parse trainer: "練馬師"
+            elif "練馬師" in label:
+                result["trainer"] = value.strip()
 
             # Parse owner: "馬主"
             elif "馬主" in label:
@@ -151,16 +179,26 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
                 except ValueError:
                     result["total_prize"] = None
 
+            # Parse import information: "賽事地點", "來港自", "來港前國家"
+            elif "賽事地點" in label or "馬房" in label:
+                result["location"] = value.strip()
+            elif "來港自" in label:
+                result["import_type"] = value.strip()
+            elif "來港前國家" in label or "原產地" in label:
+                result["import_date"] = value.strip()
+
     # Parse career record from response.text using regex
     # Format: "冠-亞-季-總出賽次數 X-X-X-X"
     career_match = re.search(r'冠-亞-季-總出賽次數\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
     if career_match:
-        result["career_record"] = {
-            "wins": int(career_match.group(1)),
-            "places": int(career_match.group(2)),
-            "shows": int(career_match.group(3)),
-            "total": int(career_match.group(4)),
-        }
+        # Use the parse_career_record helper for consistency
+        career_str = f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}"
+        career = parse_career_record(career_str)
+        if career:
+            result["wins"] = career["wins"]
+            result["places"] = career["places"]
+            result["shows"] = career["shows"]
+            result["total"] = career["total"]
 
     return result
 
