@@ -8,6 +8,11 @@ from typing import Any
 
 from .common import parse_career_record
 
+# Career record pattern: matches "冠-亞-季-總出賽次數*: 1-2-3-4" format
+_CAREER_RECORD_PATTERN = re.compile(
+    r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)'
+)
+
 
 def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
     """Parse horse profile page response.
@@ -175,22 +180,33 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
         # Try to use Scrapling's find_by_regex if available
         if hasattr(response, 'find_by_regex'):
             # Look for elements containing the career record pattern
-            matches = response.find_by_regex(r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)', first_match=True)
+            matches = response.find_by_regex(
+                _CAREER_RECORD_PATTERN.pattern,
+                first_match=True
+            )
             if matches and matches.text:
                 # Extract numbers from the matched text
                 career_match = re.search(r'(\d+)-(\d+)-(\d+)-(\d+)', matches.text)
                 if career_match:
-                    career = parse_career_record(f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}")
+                    record_str = (
+                        f"{career_match.group(1)}-{career_match.group(2)}-"
+                        f"{career_match.group(3)}-{career_match.group(4)}"
+                    )
+                    career = parse_career_record(record_str)
                     if career:
                         result["wins"] = career["wins"]
                         result["places"] = career["places"]
                         result["shows"] = career["shows"]
                         result["total"] = career["total"]
         else:
-            # Fallback to regex on response.text for mock objects that don't have find_by_regex
-            career_match = re.search(r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
+            # Fallback to regex on response.text for mock objects without find_by_regex
+            career_match = _CAREER_RECORD_PATTERN.search(response.text)
             if career_match:
-                career = parse_career_record(f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}")
+                record_str = (
+                    f"{career_match.group(1)}-{career_match.group(2)}-"
+                    f"{career_match.group(3)}-{career_match.group(4)}"
+                )
+                career = parse_career_record(record_str)
                 if career:
                     result["wins"] = career["wins"]
                     result["places"] = career["places"]

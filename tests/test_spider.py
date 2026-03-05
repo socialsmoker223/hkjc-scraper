@@ -26,7 +26,7 @@ class TestRaceMetadataParser:
     """Test race metadata extraction."""
 
     def test_parse_race_id(self):
-        from hkjc_scraper.parsers import generate_race_id
+        from hkjc_scraper.data_parsers import generate_race_id
         assert generate_race_id("2026/03/01", "ST", 1) == "2026-03-01-ST-1"
         assert generate_race_id("2026/03/01", "HV", 5) == "2026-03-01-HV-5"
         # Test with already normalized date
@@ -494,7 +494,7 @@ class TestErrorHandling:
 
     def test_clean_position_handles_empty(self):
         """Test that clean_position handles empty and None values."""
-        from hkjc_scraper.parsers import clean_position
+        from hkjc_scraper.data_parsers import clean_position
         assert clean_position("") == ""
         assert clean_position(None) == ""
         assert clean_position(" ") == ""

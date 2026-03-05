@@ -13,7 +13,7 @@ _JOCKEY_ID_PATTERN: Final = re.compile(r'jockeyid=([^&]+)')
 _TRAINER_ID_PATTERN: Final = re.compile(r'trainerid=([^&]+)')
 
 
-def extract_horse_id(href: str) -> str | None:
+def extract_horse_id(href: str | None) -> str | None:
     """Extract horse ID from href attribute.
 
     Args:
@@ -24,11 +24,11 @@ def extract_horse_id(href: str) -> str | None:
 
     Examples:
         >>> extract_horse_id("https://hkjc.com/racing/horse/horseid=H123&foo=bar")
-        "H123"
-        >>> extract_horse_id(None)
-        None
-        >>> extract_horse_id("")
-        None
+        'H123'
+        >>> extract_horse_id(None) is None
+        True
+        >>> extract_horse_id("") is None
+        True
     """
     if not href:
         return None
@@ -36,7 +36,7 @@ def extract_horse_id(href: str) -> str | None:
     return match.group(1) if match else None
 
 
-def extract_jockey_id(href: str) -> str | None:
+def extract_jockey_id(href: str | None) -> str | None:
     """Extract jockey ID from href attribute.
 
     Args:
@@ -47,9 +47,9 @@ def extract_jockey_id(href: str) -> str | None:
 
     Examples:
         >>> extract_jockey_id("https://hkjc.com/racing/jockey/jockeyid=PZ&foo=bar")
-        "PZ"
-        >>> extract_jockey_id(None)
-        None
+        'PZ'
+        >>> extract_jockey_id(None) is None
+        True
     """
     if not href:
         return None
@@ -57,7 +57,7 @@ def extract_jockey_id(href: str) -> str | None:
     return match.group(1) if match else None
 
 
-def extract_trainer_id(href: str) -> str | None:
+def extract_trainer_id(href: str | None) -> str | None:
     """Extract trainer ID from href attribute.
 
     Args:
@@ -68,9 +68,9 @@ def extract_trainer_id(href: str) -> str | None:
 
     Examples:
         >>> extract_trainer_id("https://hkjc.com/racing/trainer/trainerid=NPC&foo=bar")
-        "NPC"
-        >>> extract_trainer_id(None)
-        None
+        'NPC'
+        >>> extract_trainer_id(None) is None
+        True
     """
     if not href:
         return None

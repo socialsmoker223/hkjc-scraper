@@ -313,9 +313,23 @@ def test_parse_jockey_profile_basic_info():
                 MockRow(["勝出率 ：", "：", "11.76%"]),
                 MockRow(["所贏獎金 ：", "：", "$54,862,525"]),
             ]
+            # Collect all cells for "td" selector
+            self.all_cells = []
+            for row in self.rows:
+                self.all_cells.extend(row.cells)
+            # Add cells for background, achievements, career stats
+            self.all_cells.extend([
+                MockCell("背景： Test background text"),
+                MockCell("成就： Test achievements"),
+                MockCell("在港累積232場勝出率百分之12.4"),
+            ])
 
         def css(self, selector):
-            return self.rows
+            if selector == "td":
+                return self.all_cells
+            elif selector == "table tr":
+                return self.rows
+            return []
 
     response = MockResponse()
     result = parse_jockey_profile(response, "BH", "布文")
@@ -369,9 +383,17 @@ def test_parse_jockey_profile_with_missing_data():
             self.rows = [
                 MockRow(["冠 ：", ""]),
             ]
+            # Empty cells for "td" selector
+            self.all_cells = []
+            for row in self.rows:
+                self.all_cells.extend(row.cells)
 
         def css(self, selector):
-            return self.rows
+            if selector == "td":
+                return self.all_cells
+            elif selector == "table tr":
+                return self.rows
+            return []
 
     response = MockResponse()
     result = parse_jockey_profile(response, "BH", "Test Jockey")
@@ -420,9 +442,23 @@ def test_parse_trainer_profile_basic_info():
                 MockRow(["勝出率 ：", "：", "11.94%"]),
                 MockRow(["所贏獎金 ：", "：", "$49,009,255"]),
             ]
+            # Collect all cells for "td" selector
+            self.all_cells = []
+            for row in self.rows:
+                self.all_cells.extend(row.cells)
+            # Add cells for background, achievements, career stats
+            self.all_cells.extend([
+                MockCell("背景： Test background"),
+                MockCell("成就： Test achievements"),
+                MockCell("在港累積1166場勝出率百分之9.6"),
+            ])
 
         def css(self, selector):
-            return self.rows
+            if selector == "td":
+                return self.all_cells
+            elif selector == "table tr":
+                return self.rows
+            return []
 
     response = MockResponse()
     result = parse_trainer_profile(response, "FC", "方嘉柏")
@@ -479,9 +515,17 @@ def test_parse_trainer_profile_with_missing_data():
             self.rows = [
                 MockRow(["冠 ：", ""]),
             ]
+            # Empty cells for "td" selector
+            self.all_cells = []
+            for row in self.rows:
+                self.all_cells.extend(row.cells)
 
         def css(self, selector):
-            return self.rows
+            if selector == "td":
+                return self.all_cells
+            elif selector == "table tr":
+                return self.rows
+            return []
 
     response = MockResponse()
     result = parse_trainer_profile(response, "FC", "Test Trainer")

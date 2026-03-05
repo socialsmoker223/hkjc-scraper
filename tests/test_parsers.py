@@ -1,6 +1,6 @@
 """Tests for parser helper functions."""
 import pytest
-from hkjc_scraper.parsers import (
+from hkjc_scraper.data_parsers import (
     clean_position,
     parse_rating,
     parse_prize,
