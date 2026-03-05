@@ -730,6 +730,59 @@ class TestSectionalHrefExtraction:
         assert sectional_req.callback is not None
         assert sectional_req.callback.__name__ == "parse_sectional_times"
 
+    @pytest.mark.asyncio
+    async def test_parse_sectional_times_yields_records(self):
+        """Test that parse_sectional_times yields sectional time records."""
+        from hkjc_scraper.parsers import parse_sectional_time_cell
+
+        class MockCell:
+            def __init__(self, text):
+                self.text = text
+
+        class MockRow:
+            def __init__(self, cells):
+                self._cells = cells
+
+            def css(self, selector):
+                return self._cells
+
+        class MockResponse:
+            def __init__(self):
+                self.meta = {"race_id": "2026-03-01-ST-1"}
+                self.text = "分段時間"
+
+            def css(self, selector):
+                return self._rows
+
+        spider = HKJCRacingSpider()
+        race_id = "2026-03-01-ST-1"
+
+        # Create mock response with sectional data
+        mock_response = MockResponse()
+
+        # Create mock cells with sectional data
+        # Row format: position, horse_no, horse_name, section1, section2, ..., finish_time
+        mock_cells = [
+            MockCell("1"),
+            MockCell("9"),
+            MockCell("步風雷"),
+            MockCell("4 1-3/4 14.16"),  # Section 1
+            MockCell("4 2-1/2 22.32"),  # Section 2
+            MockCell("1:47.33")         # Finish time
+        ]
+        mock_row = MockRow(mock_cells)
+        mock_response._rows = [mock_row]
+
+        # Parse and verify
+        items = []
+        async for item in spider.parse_sectional_times(mock_response):
+            items.append(item)
+
+        assert len(items) > 0
+        assert items[0]["table"] == "sectional_times"
+        assert items[0]["data"]["race_id"] == race_id
+        assert items[0]["data"]["horse_no"] == "9"
+
 
 class TestProfileParsers:
     """Test profile parser callback methods."""

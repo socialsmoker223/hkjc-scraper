@@ -424,14 +424,69 @@ class HKJCRacingSpider(Spider):
         yield {"table": "jockeys", "data": profile_data}
 
     async def parse_sectional_times(self, response):
-        """Parse sectional time page and yield sectional data.
+        """Parse sectional time page and yield per-horse, per-section records.
 
-        This is a stub for now - will be implemented in a subsequent task.
+        Yields:
+            {"table": "sectional_times", "data": {...}}
         """
-        meta = response.meta
-        race_id = meta.get("race_id")
-        self.logger.info(f"Parsing sectional times for race {race_id}")
-        yield  # Stub to make this a generator
+        from hkjc_scraper.parsers import parse_sectional_time_cell
+
+        race_id = response.meta.get("race_id")
+
+        # Check for "沒有相關資料" or similar empty state
+        page_text = response.text
+        if "沒有相關資料" in page_text or "不提供" in page_text:
+            self.logger.warning(f"No sectional time data available for race {race_id}")
+            return
+
+        # Find the main sectional table
+        # The table has rows with horse data, skip header rows
+        all_text = response.text
+        if "分段時間" not in all_text:
+            self.logger.warning(f"No sectional table found for race {race_id}")
+            return
+
+        # Get all table rows
+        rows = response.css("table tbody tr")
+        if not rows:
+            self.logger.warning(f"No sectional table found for race {race_id}")
+            return
+
+        # Process data rows (skip headers)
+        for row in rows:
+            cells = row.css("td")
+            if len(cells) < 5:
+                continue
+
+            # First cell should be finishing position (number)
+            first_cell = cells[0].text
+            if not first_cell or not first_cell[0].isdigit():
+                continue
+
+            # Second cell is horse_no
+            horse_no = cells[1].text.strip()
+            if not horse_no or not horse_no.isdigit():
+                continue
+
+            # Parse each section column (starts at index 3, skip last cell which is finish time)
+            section_num = 1
+            for cell in cells[3:-1]:
+                cell_text = cell.text.strip()
+                if cell_text and cell_text not in ["分段時間", "第 1 段", "第 2 段", "第 3 段", "第 4 段", "第 5 段", "第 6 段"]:
+                    parsed = parse_sectional_time_cell(cell_text)
+                    if parsed:
+                        yield {
+                            "table": "sectional_times",
+                            "data": {
+                                "race_id": race_id,
+                                "horse_no": horse_no,
+                                "section_number": section_num,
+                                "position": parsed.get("position"),
+                                "margin": parsed.get("margin", ""),
+                                "time": parsed.get("time"),
+                            }
+                        }
+                        section_num += 1
 
     async def parse_trainer_profile(self, response):
         """Parse trainer profile page and yield trainer data."""
