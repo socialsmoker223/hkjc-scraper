@@ -112,7 +112,17 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
         # HKJC uses 3-column structure: label, ":", value
         if len(cells) >= 3:
             label = cells[0].text
-            value = cells[2].text
+
+            # Extract value from cells[2]
+            # Some values are inside nested <a> tags, need to extract from those
+            value_cell = cells[2]
+            value = value_cell.text.strip()
+
+            # If cell.text is empty or whitespace, try extracting from nested <a> tag
+            if not value:
+                links = value_cell.css("a")
+                if links:
+                    value = links[0].text.strip()
 
             if not label or not value:
                 continue
@@ -264,7 +274,16 @@ def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dic
         # HKJC uses 6-column structure: label, ":", value, label, ":", value
         if len(cells) >= 3:
             label = cells[0].text
-            value = cells[2].text
+
+            # Extract value from cells[2], handling nested <a> tags
+            value_cell = cells[2]
+            value = value_cell.text.strip()
+
+            # If cell.text is empty or whitespace, try extracting from nested <a> tag
+            if not value:
+                links = value_cell.css("a")
+                if links:
+                    value = links[0].text.strip()
 
             if not label or not value:
                 continue
@@ -374,7 +393,16 @@ def parse_trainer_profile(response: Any, trainer_id: str, trainer_name: str) -> 
         # HKJC uses 6-column structure: label, ":", value, label, ":", value
         if len(cells) >= 3:
             label = cells[0].text
-            value = cells[2].text
+
+            # Extract value from cells[2], handling nested <a> tags
+            value_cell = cells[2]
+            value = value_cell.text.strip()
+
+            # If cell.text is empty or whitespace, try extracting from nested <a> tag
+            if not value:
+                links = value_cell.css("a")
+                if links:
+                    value = links[0].text.strip()
 
             if not label or not value:
                 continue
