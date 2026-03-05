@@ -6,6 +6,7 @@ from hkjc_scraper.profile_parsers import (
     parse_horse_profile,
     parse_jockey_profile,
     parse_trainer_profile,
+    parse_career_record,
 )
 
 def test_extract_horse_id_from_href():
@@ -31,6 +32,18 @@ def test_extract_trainer_id_from_href():
 def test_extract_trainer_id_no_match():
     href = "/some/other/path"
     assert extract_trainer_id(href) is None
+
+
+def test_parse_career_record():
+    """Test parsing career record string into components."""
+    result = parse_career_record("2-0-2-17")
+    assert result == {"wins": 2, "places": 0, "shows": 2, "total": 17}
+
+
+def test_parse_career_record_single_digit():
+    """Test parsing with single digit components."""
+    result = parse_career_record("1-2-3-10")
+    assert result == {"wins": 1, "places": 2, "shows": 3, "total": 10}
 
 
 def test_parse_horse_profile_basic_info():

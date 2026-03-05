@@ -23,6 +23,31 @@ def extract_trainer_id(href: str) -> str | None:
     return match.group(1) if match else None
 
 
+def parse_career_record(record_str: str) -> dict | None:
+    """Parse career record string into wins, places, shows, total.
+
+    Args:
+        record_str: Career record like "2-0-2-17" (wins-places-shows-total)
+
+    Returns:
+        {"wins": int, "places": int, "shows": int, "total": int} or None
+    """
+    if not record_str:
+        return None
+    parts = record_str.strip().split("-")
+    if len(parts) != 4:
+        return None
+    try:
+        return {
+            "wins": int(parts[0]),
+            "places": int(parts[1]),
+            "shows": int(parts[2]),
+            "total": int(parts[3]),
+        }
+    except ValueError:
+        return None
+
+
 def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
     """Parse horse profile page response.
 
