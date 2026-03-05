@@ -172,7 +172,10 @@ def parse_sectional_time_cell(cell_text: str) -> dict[str, int | str | float] | 
     """Extract position, margin, time from a section cell.
 
     Args:
-        cell_text: Cell text like "4 1-3/4 14.16" or "4 14.16"
+        cell_text: Cell text like "3\n1/2\n13.52" or "1\nN\n13.44"
+
+    The cell contains position, margin, and time on separate lines.
+    Some cells may have extra 200m split times that should be ignored.
 
     Returns:
         {"position": int, "margin": str, "time": float} or None if empty
@@ -180,7 +183,8 @@ def parse_sectional_time_cell(cell_text: str) -> dict[str, int | str | float] | 
     if not cell_text or not cell_text.strip():
         return None
 
-    parts = cell_text.strip().split()
+    # Split by whitespace (including newlines) and filter empty strings
+    parts = [p for p in cell_text.strip().split() if p]
     if len(parts) < 2:
         return None
 
@@ -190,15 +194,25 @@ def parse_sectional_time_cell(cell_text: str) -> dict[str, int | str | float] | 
     except ValueError:
         return None
 
-    # Last part is always time
-    try:
-        time = float(parts[-1])
-    except ValueError:
+    # Find the time - it's the last numeric value that can be parsed as float
+    # Skip values that look like times with colons (e.g., 1:21.96)
+    time = None
+    time_idx = None
+    for i in range(len(parts) - 1, 0, -1):  # Skip position at index 0
+        try:
+            if ":" not in parts[i]:  # Skip finish times
+                time = float(parts[i])
+                time_idx = i
+                break
+        except ValueError:
+            continue
+
+    if time is None:
         return None
 
-    # Middle parts (if any) form the margin
+    # Margin is everything between position and time
     margin = ""
-    if len(parts) > 2:
-        margin = " ".join(parts[1:-1])
+    if time_idx and time_idx > 1:
+        margin = " ".join(parts[1:time_idx])
 
     return {"position": position, "margin": margin, "time": time}

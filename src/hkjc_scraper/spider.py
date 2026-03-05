@@ -433,7 +433,7 @@ class HKJCRacingSpider(Spider):
         race_id = response.meta.get("race_id")
 
         # Check for "沒有相關資料" or similar empty state
-        page_text = response.text
+        page_text = response.get_all_text()
         if "沒有相關資料" in page_text or "不提供" in page_text:
             self.logger.warning(f"No sectional time data available for race {race_id}")
             return
@@ -470,24 +470,52 @@ class HKJCRacingSpider(Spider):
             # Parse each section column (starts at index 3, skip last cell which is finish time)
             section_num = 1
             for cell in cells[3:-1]:
-                cell_text = cell.text.strip()
-                if cell_text and cell_text not in ["分段時間", "第 1 段", "第 2 段", "第 3 段", "第 4 段", "第 5 段", "第 6 段"]:
-                    parsed = parse_sectional_time_cell(cell_text)
-                    if parsed:
-                        yield {
-                            "table": "sectional_times",
-                            "data": {
-                                "race_id": race_id,
-                                "horse_no": horse_no,
-                                "section_number": section_num,
-                                "position": parsed.get("position"),
-                                "margin": parsed.get("margin", ""),
-                                "time": parsed.get("time"),
-                            }
-                        }
-                    # Increment section number regardless of whether cell was parsed
-                    # This ensures sequential section numbers even with empty cells
+                # Extract position and margin from the f_clear paragraph
+                f_clear = cell.css("p.f_clear")
+                if not f_clear:
+                    # Empty cell (blank image), skip but count section
                     section_num += 1
+                    continue
+
+                # Position is in span.f_fl
+                position_span = f_clear[0].css("span.f_fl")
+                if not position_span:
+                    section_num += 1
+                    continue
+                position_text = position_span[0].text.strip()
+                if not position_text.isdigit():
+                    section_num += 1
+                    continue
+
+                # Margin is in <i> tag
+                margin_i = f_clear[0].css("i")
+                margin = margin_i[0].text.strip() if margin_i else ""
+
+                # Time is in p.sectional_200, just the first value
+                sectional_p = cell.css("p.sectional_200")
+                time = None
+                if sectional_p:
+                    time_text = sectional_p[0].text.strip().split()[0] if sectional_p[0].text else None
+                    if time_text:
+                        try:
+                            time = float(time_text)
+                        except ValueError:
+                            pass
+
+                if time is not None:
+                    yield {
+                        "table": "sectional_times",
+                        "data": {
+                            "race_id": race_id,
+                            "horse_no": horse_no,
+                            "section_number": section_num,
+                            "position": int(position_text),
+                            "margin": margin,
+                            "time": time,
+                        }
+                    }
+
+                section_num += 1
 
     async def parse_trainer_profile(self, response):
         """Parse trainer profile page and yield trainer data."""
