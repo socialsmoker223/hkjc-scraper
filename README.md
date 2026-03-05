@@ -13,6 +13,31 @@ Extract horse racing data from Hong Kong Jockey Club (HKJC) using Scrapling Spid
 - Normalized Supabase-compatible output
 - Sectional times (per-horse, per-section position and time data)
 
+## Module Organization
+
+The scraper is organized into focused modules:
+
+- **data_parsers.py** - General data parsing utilities (positions, ratings, prizes, race IDs)
+- **id_parsers.py** - ID extraction from HKJC URLs (horse, jockey, trainer)
+- **common.py** - Shared helper functions (career record parsing)
+- **horse_parsers.py** - Horse profile parsing
+- **jockey_trainer_parsers.py** - Jockey and trainer profile parsing
+- **spider.py** - Main spider implementation
+- **cli.py** - Command-line interface
+
+### Public API
+
+The `__init__.py` exports all public functions. Import from the top-level package:
+
+```python
+from hkjc_scraper import (
+    clean_position,
+    parse_horse_profile,
+    parse_jockey_profile,
+    # ... etc
+)
+```
+
 ## Installation
 
 ```bash
