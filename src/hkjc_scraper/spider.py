@@ -3,7 +3,7 @@
 import re
 from scrapling.spiders import Spider, Request
 
-from hkjc_scraper.parsers import (
+from hkjc_scraper.data_parsers import (
     clean_position,
     parse_rating,
     parse_prize,
@@ -12,8 +12,10 @@ from hkjc_scraper.parsers import (
     parse_sectional_time_cell,
 )
 
-from hkjc_scraper.profile_parsers import (
+from hkjc_scraper.horse_parsers import (
     parse_horse_profile as parse_horse_profile_data,
+)
+from hkjc_scraper.jockey_trainer_parsers import (
     parse_jockey_profile as parse_jockey_profile_data,
     parse_trainer_profile as parse_trainer_profile_data,
 )
