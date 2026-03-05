@@ -9,6 +9,7 @@ from hkjc_scraper.parsers import (
     parse_prize,
     parse_running_position,
     generate_race_id,
+    parse_sectional_time_cell,
 )
 
 from hkjc_scraper.profile_parsers import (
@@ -429,8 +430,6 @@ class HKJCRacingSpider(Spider):
         Yields:
             {"table": "sectional_times", "data": {...}}
         """
-        from hkjc_scraper.parsers import parse_sectional_time_cell
-
         race_id = response.meta.get("race_id")
 
         # Check for "沒有相關資料" or similar empty state
@@ -441,8 +440,7 @@ class HKJCRacingSpider(Spider):
 
         # Find the main sectional table
         # The table has rows with horse data, skip header rows
-        all_text = response.text
-        if "分段時間" not in all_text:
+        if "分段時間" not in page_text:
             self.logger.warning(f"No sectional table found for race {race_id}")
             return
 
@@ -459,6 +457,7 @@ class HKJCRacingSpider(Spider):
                 continue
 
             # First cell should be finishing position (number)
+            # Check for empty string before accessing first character
             first_cell = cells[0].text
             if not first_cell or not first_cell[0].isdigit():
                 continue
@@ -486,7 +485,9 @@ class HKJCRacingSpider(Spider):
                                 "time": parsed.get("time"),
                             }
                         }
-                        section_num += 1
+                    # Increment section number regardless of whether cell was parsed
+                    # This ensures sequential section numbers even with empty cells
+                    section_num += 1
 
     async def parse_trainer_profile(self, response):
         """Parse trainer profile page and yield trainer data."""
