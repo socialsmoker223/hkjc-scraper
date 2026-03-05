@@ -11,6 +11,7 @@ Extract horse racing data from Hong Kong Jockey Club (HKJC) using Scrapling Spid
 - Profile scraping (horse, jockey, trainer profiles with stats)
 - Async crawling with concurrent requests
 - Normalized Supabase-compatible output
+- Sectional times (per-horse, per-section position and time data)
 
 ## Installation
 
@@ -59,6 +60,7 @@ asyncio.run(main())
 - **horses** - Horse profiles (sire, dam, age, colour, gender, ratings, prize money)
 - **jockeys** - Jockey profiles (background, achievements, career stats, season stats)
 - **trainers** - Trainer profiles (background, achievements, career stats, season stats)
+- **sectional_times** - Per-horse sectional time data (position, margin, time at each section)
 
 ### Output Format
 Data is saved as JSON with UTF-8 encoding:
@@ -70,7 +72,8 @@ data/
 ├── incidents_2026-03-01.json
 ├── horses_2026-03-01.json
 ├── jockeys_2026-03-01.json
-└── trainers_2026-03-01.json
+├── trainers_2026-03-01.json
+└── sectional_times_2026-03-01.json
 ```
 
 ## Testing

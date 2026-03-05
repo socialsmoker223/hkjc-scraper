@@ -733,9 +733,52 @@ class TestSectionalHrefExtraction:
     @pytest.mark.asyncio
     async def test_parse_sectional_times_yields_records(self):
         """Test that parse_sectional_times yields sectional time records."""
-        from hkjc_scraper.parsers import parse_sectional_time_cell
 
         class MockCell:
+            """Mock cell that supports css selector for nested elements."""
+            def __init__(self, text, has_f_clear=True, position="4", margin="1-3/4", time="14.16"):
+                self.text = text
+                self._has_f_clear = has_f_clear
+                self._position = position
+                self._margin = margin
+                self._time = time
+
+            def css(self, selector):
+                if selector == "p.f_clear":
+                    if self._has_f_clear:
+                        return [MockPara(self._position, self._margin)]
+                    return []
+                if selector == "p.sectional_200":
+                    if self._has_f_clear and self._time:
+                        return [MockTimePara(self._time)]
+                    return []
+                return []
+
+        class MockPara:
+            """Mock paragraph element containing position and margin spans."""
+            def __init__(self, position, margin):
+                self._position = position
+                self._margin = margin
+
+            def css(self, selector):
+                if selector == "span.f_fl":
+                    return [MockSpan(self._position)]
+                if selector == "i":
+                    return [MockI(self._margin)]
+                return []
+
+        class MockTimePara:
+            """Mock time paragraph."""
+            def __init__(self, time):
+                self.text = time
+
+        class MockI:
+            """Mock i element for margin text."""
+            def __init__(self, text):
+                self.text = text
+
+        class MockSpan:
+            """Mock span element for position/margin text."""
             def __init__(self, text):
                 self.text = text
 
@@ -747,12 +790,15 @@ class TestSectionalHrefExtraction:
                 return self._cells
 
         class MockResponse:
-            def __init__(self):
+            def __init__(self, text="分段時間"):
                 self.meta = {"race_id": "2026-03-01-ST-1"}
-                self.text = "分段時間"
+                self.text = text
 
             def css(self, selector):
                 return self._rows
+
+            def get_all_text(self):
+                return self.text
 
         spider = HKJCRacingSpider()
         race_id = "2026-03-01-ST-1"
@@ -761,14 +807,14 @@ class TestSectionalHrefExtraction:
         mock_response = MockResponse()
 
         # Create mock cells with sectional data
-        # Row format: position, horse_no, horse_name, section1, section2, ..., finish_time
+        # Row format: position, horse_no, horse_name, section1, section2, finish_time
         mock_cells = [
-            MockCell("1"),
-            MockCell("9"),
-            MockCell("步風雷"),
-            MockCell("4 1-3/4 14.16"),  # Section 1
-            MockCell("4 2-1/2 22.32"),  # Section 2
-            MockCell("1:47.33")         # Finish time
+            MockCell("1", has_f_clear=False),          # Position column (not f_clear)
+            MockCell("9", has_f_clear=False),          # Horse number
+            MockCell("步風雷", has_f_clear=False),      # Horse name
+            MockCell("", has_f_clear=True, position="4", margin="1-3/4", time="14.16"),  # Section 1
+            MockCell("", has_f_clear=True, position="3", margin="1/2", time="23.50"),    # Section 2
+            MockCell("1:47.33", has_f_clear=False)     # Finish time
         ]
         mock_row = MockRow(mock_cells)
         mock_response._rows = [mock_row]
@@ -782,6 +828,9 @@ class TestSectionalHrefExtraction:
         assert items[0]["table"] == "sectional_times"
         assert items[0]["data"]["race_id"] == race_id
         assert items[0]["data"]["horse_no"] == "9"
+        assert items[0]["data"]["section_number"] == 1
+        assert items[0]["data"]["position"] == 4
+        assert items[0]["data"]["margin"] == "1-3/4"
 
 
 class TestProfileParsers:
