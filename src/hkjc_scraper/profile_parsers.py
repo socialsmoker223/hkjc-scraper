@@ -207,20 +207,92 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
             elif "來港前國家" in label or "原產地" in label:
                 result["import_date"] = value.strip()
 
-    # Parse career record from response.text using regex (fallback if not in table)
-    # Format: "冠-亞-季-總出賽次數* X-X-X-X" or "冠-亞-季-總出賽次數 X-X-X-X"
-    career_match = re.search(r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
-    if career_match:
-        # Use the parse_career_record helper for consistency
-        career_str = f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}"
-        career = parse_career_record(career_str)
-        if career:
-            result["wins"] = career["wins"]
-            result["places"] = career["places"]
-            result["shows"] = career["shows"]
-            result["total"] = career["total"]
+    # Fallback: Try to find career record using CSS selectors/text search
+    # This handles cases where career record is not in the main table
+    # but is in the page text (e.g., from a summary section)
+    if result["wins"] == 0 and result["total"] == 0:
+        # Try to use Scrapling's find_by_regex if available
+        if hasattr(response, 'find_by_regex'):
+            # Look for elements containing the career record pattern
+            matches = response.find_by_regex(r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)', first_match=True)
+            if matches and matches.text:
+                # Extract numbers from the matched text
+                career_match = re.search(r'(\d+)-(\d+)-(\d+)-(\d+)', matches.text)
+                if career_match:
+                    career = parse_career_record(f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}")
+                    if career:
+                        result["wins"] = career["wins"]
+                        result["places"] = career["places"]
+                        result["shows"] = career["shows"]
+                        result["total"] = career["total"]
+        else:
+            # Fallback to regex on response.text for mock objects that don't have find_by_regex
+            career_match = re.search(r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
+            if career_match:
+                career = parse_career_record(f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}")
+                if career:
+                    result["wins"] = career["wins"]
+                    result["places"] = career["places"]
+                    result["shows"] = career["shows"]
+                    result["total"] = career["total"]
 
     return result
+
+
+def _extract_text_after_label(elements, label_text: str) -> str | None:
+    """Extract text content from elements containing a specific label.
+
+    Finds elements that contain the label (e.g., "背景：") and extracts
+    the text content after the label.
+
+    Args:
+        elements: List of Scrapling elements to search
+        label_text: The label text to search for (e.g., "背景：")
+
+    Returns:
+        The extracted text content after the label, or None if not found
+    """
+    if not elements:
+        return None
+
+    for element in elements:
+        text = element.text
+        if label_text in text:
+            # Extract text after the label
+            idx = text.find(label_text)
+            if idx != -1:
+                result = text[idx + len(label_text):].strip()
+                # Remove trailing newlines and extra whitespace
+                result = result.split('\n')[0].strip()
+                if result:
+                    return result
+    return None
+
+
+def _parse_career_stats_from_elements(elements) -> tuple | None:
+    """Parse career stats (wins, win_rate) from elements containing "在港累積".
+
+    Args:
+        elements: List of Scrapling elements to search
+
+    Returns:
+        Tuple of (wins, win_rate) or None if not found
+    """
+    if not elements:
+        return None
+
+    for element in elements:
+        text = element.text
+        if "在港累積" in text and "場" in text and "勝出率" in text and "百分之" in text:
+            # Parse: "在港累積232場勝出率百分之12.4"
+            wins_match = re.search(r'在港累積\s*(\d+)\s*場', text)
+            rate_match = re.search(r'百分之\s*([\d.]+)', text)
+            if wins_match and rate_match:
+                try:
+                    return (int(wins_match.group(1)), float(rate_match.group(1)))
+                except (ValueError, IndexError):
+                    pass
+    return None
 
 
 def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dict:
@@ -257,24 +329,21 @@ def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dic
         },
     }
 
-    full_text = response.text
+    # Use CSS selectors to find table cells containing the labels
+    # This approach is more robust than regex on the full text
+    all_tds = response.css("td")
 
-    # Parse background: text after "背景：" until "成就：" or end of line
-    # Match until the next label or end
-    background_match = re.search(r'背景[：:]\s*(.*?)(?=\s*成就[：:]|\n\s*[在成主]|$)', full_text, re.DOTALL)
-    if background_match:
-        result["background"] = background_match.group(1).strip()
+    # Parse background from cells containing "背景："
+    result["background"] = _extract_text_after_label(all_tds, "背景：")
 
-    # Parse achievements: text after "成就：" until "主要賽事冠軍：" or end of line
-    achievements_match = re.search(r'成就[：:]\s*(.*?)(?=\s*主要賽事冠軍[：:]|\n\s*在港累積|\n\s*[主在]|$)', full_text, re.DOTALL)
-    if achievements_match:
-        result["achievements"] = achievements_match.group(1).strip()
+    # Parse achievements from cells containing "成就："
+    result["achievements"] = _extract_text_after_label(all_tds, "成就：")
 
-    # Parse career stats: "在港累積XXX場勝出率：百分之XX.X" or "在港累積XXX場勝出率百分之XX.X"
-    career_match = re.search(r'在港累積.*?(\d+)場.*?勝出率[：:]*.*?百分之([\d.]+)', full_text)
-    if career_match:
-        result["career_wins"] = int(career_match.group(1))
-        result["career_win_rate"] = float(career_match.group(2))
+    # Parse career stats from cells containing "在港累積"
+    career_stats = _parse_career_stats_from_elements(all_tds)
+    if career_stats:
+        result["career_wins"] = career_stats[0]
+        result["career_win_rate"] = career_stats[1]
 
     # Parse season stats and age from table rows
     rows = response.css("table tr")
@@ -298,12 +367,12 @@ def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dic
             if not label or not value:
                 continue
 
-            # Parse age
+            # Parse age - extract digits from value like "45歲"
             if "年齡" in label:
-                age_match = re.search(r'(\d+)', value)
-                if age_match:
+                digits = ''.join(c for c in value if c.isdigit())
+                if digits:
                     try:
-                        result["age"] = int(age_match.group(1))
+                        result["age"] = int(digits)
                     except ValueError:
                         result["age"] = None
 
@@ -376,24 +445,20 @@ def parse_trainer_profile(response: Any, trainer_id: str, trainer_name: str) -> 
         },
     }
 
-    full_text = response.text
+    # Use CSS selectors to find table cells containing the labels
+    all_tds = response.css("td")
 
-    # Parse background: text after "背景：" until "成就：" or end of line
-    # Match until the next label or end
-    background_match = re.search(r'背景[：:]\s*(.*?)(?=\s*成就[：:]|\n\s*[在成主]|$)', full_text, re.DOTALL)
-    if background_match:
-        result["background"] = background_match.group(1).strip()
+    # Parse background from cells containing "背景："
+    result["background"] = _extract_text_after_label(all_tds, "背景：")
 
-    # Parse achievements: text after "成就：" until "主要賽事冠軍：" or end of line
-    achievements_match = re.search(r'成就[：:]\s*(.*?)(?=\s*主要賽事冠軍[：:]|\n\s*在港累積|\n\s*[主在]|$)', full_text, re.DOTALL)
-    if achievements_match:
-        result["achievements"] = achievements_match.group(1).strip()
+    # Parse achievements from cells containing "成就："
+    result["achievements"] = _extract_text_after_label(all_tds, "成就：")
 
-    # Parse career stats: "在港累積XXX場勝出率：百分之XX.X" or "在港累積XXX場勝出率百分之XX.X"
-    career_match = re.search(r'在港累積.*?(\d+)場.*?勝出率[：:]*.*?百分之([\d.]+)', full_text)
-    if career_match:
-        result["career_wins"] = int(career_match.group(1))
-        result["career_win_rate"] = float(career_match.group(2))
+    # Parse career stats from cells containing "在港累積"
+    career_stats = _parse_career_stats_from_elements(all_tds)
+    if career_stats:
+        result["career_wins"] = career_stats[0]
+        result["career_win_rate"] = career_stats[1]
 
     # Parse season stats and age from table rows
     rows = response.css("table tr")
@@ -417,12 +482,12 @@ def parse_trainer_profile(response: Any, trainer_id: str, trainer_name: str) -> 
             if not label or not value:
                 continue
 
-            # Parse age
+            # Parse age - extract digits from value like "58歲"
             if "年齡" in label:
-                age_match = re.search(r'(\d+)', value)
-                if age_match:
+                digits = ''.join(c for c in value if c.isdigit())
+                if digits:
                     try:
-                        result["age"] = int(age_match.group(1))
+                        result["age"] = int(digits)
                     except ValueError:
                         result["age"] = None
 
