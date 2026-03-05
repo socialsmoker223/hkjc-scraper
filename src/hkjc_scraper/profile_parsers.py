@@ -189,6 +189,16 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
                 except ValueError:
                     result["total_prize"] = None
 
+            # Parse career record: "冠-亞-季-總出賽次數"
+            # Label may have * suffix: "冠-亞-季-總出賽次數*"
+            elif "冠-亞-季-總出賽次數" in label:
+                career = parse_career_record(value.strip())
+                if career:
+                    result["wins"] = career["wins"]
+                    result["places"] = career["places"]
+                    result["shows"] = career["shows"]
+                    result["total"] = career["total"]
+
             # Parse import information: "賽事地點", "來港自", "來港前國家"
             elif "賽事地點" in label or "馬房" in label:
                 result["location"] = value.strip()
@@ -197,9 +207,9 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
             elif "來港前國家" in label or "原產地" in label:
                 result["import_date"] = value.strip()
 
-    # Parse career record from response.text using regex
-    # Format: "冠-亞-季-總出賽次數 X-X-X-X"
-    career_match = re.search(r'冠-亞-季-總出賽次數\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
+    # Parse career record from response.text using regex (fallback if not in table)
+    # Format: "冠-亞-季-總出賽次數* X-X-X-X" or "冠-亞-季-總出賽次數 X-X-X-X"
+    career_match = re.search(r'冠-亞-季-總出賽次數\*?\s*[：:]?\s*(\d+)-(\d+)-(\d+)-(\d+)', response.text)
     if career_match:
         # Use the parse_career_record helper for consistency
         career_str = f"{career_match.group(1)}-{career_match.group(2)}-{career_match.group(3)}-{career_match.group(4)}"
