@@ -666,6 +666,71 @@ class TestParseRaceCollectsProfileIds:
         assert "FC" in spider._seen_trainers
 
 
+class TestSectionalHrefExtraction:
+    """Test sectional time href extraction and request yielding."""
+
+    def test_extract_sectional_href_from_links(self):
+        """Test that we can extract sectional href from anchor tags."""
+        from bs4 import BeautifulSoup
+
+        html = """
+        <div>
+            <a href="/other/link">Other</a>
+            <a href="/zh-hk/local/information/displaysectionaltime?racedate=01/03/2026&RaceNo=1">Sectional</a>
+            <a href="/another/link">Another</a>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        links = soup.find_all("a")
+
+        sectional_href = None
+        for link in links:
+            href = link.get("href", "")
+            if "displaysectionaltime" in href:
+                sectional_href = href
+                break
+
+        assert sectional_href == "/zh-hk/local/information/displaysectionaltime?racedate=01/03/2026&RaceNo=1"
+
+    @pytest.mark.asyncio
+    async def test_parse_race_yields_sectional_request(self, sample_race_response):
+        """Test that parse_race yields a sectional time request."""
+        from scrapling.spiders import Request
+
+        spider = HKJCRacingSpider()
+
+        sample_race_response.meta = {
+            "date": "2026/03/01",
+            "racecourse": "ST",
+            "race_no": 1
+        }
+
+        results = []
+        async for item in spider.parse_race(sample_race_response):
+            results.append(item)
+
+        # Find the sectional request
+        sectional_requests = []
+        for item in results:
+            if hasattr(item, 'url') and 'displaysectionaltime' in item.url:
+                sectional_requests.append(item)
+
+        assert len(sectional_requests) == 1, f"Expected 1 sectional request, got {len(sectional_requests)}"
+        sectional_req = sectional_requests[0]
+
+        # Verify the URL is correctly constructed
+        assert "displaysectionaltime" in sectional_req.url
+        assert "racedate=01/03/2026" in sectional_req.url
+        assert "RaceNo=1" in sectional_req.url
+
+        # Verify meta includes race_id
+        assert sectional_req.meta.get("race_id") == "2026-03-01-ST-1"
+
+        # Verify callback is set
+        assert sectional_req.callback is not None
+        assert sectional_req.callback.__name__ == "parse_sectional_times"
+
+
 class TestProfileParsers:
     """Test profile parser callback methods."""
 

@@ -97,6 +97,20 @@ class HKJCRacingSpider(Spider):
         for inc_item in self._parse_incidents(response, race_id):
             yield inc_item
 
+        # Extract sectional time href and yield request
+        sectional_href = None
+        for link in response.css("a"):
+            href = link.attrib.get("href", "")
+            if "displaysectionaltime" in href:
+                sectional_href = href
+                break
+
+        if sectional_href:
+            url = response.urljoin(sectional_href)
+            yield Request(url, callback=self.parse_sectional_times, meta={"race_id": race_id})
+        else:
+            self.logger.warning(f"No sectional time link found for race {race_id}")
+
         # Yield profile fetching requests directly
         # Fetch horse profiles
         for horse_id, horse_name in horses.items():
@@ -408,6 +422,16 @@ class HKJCRacingSpider(Spider):
         profile_data = parse_jockey_profile_data(response, jockey_id, jockey_name)
         profile_data["jockey_id"] = jockey_id
         yield {"table": "jockeys", "data": profile_data}
+
+    async def parse_sectional_times(self, response):
+        """Parse sectional time page and yield sectional data.
+
+        This is a stub for now - will be implemented in a subsequent task.
+        """
+        meta = response.meta
+        race_id = meta.get("race_id")
+        self.logger.info(f"Parsing sectional times for race {race_id}")
+        yield  # Stub to make this a generator
 
     async def parse_trainer_profile(self, response):
         """Parse trainer profile page and yield trainer data."""

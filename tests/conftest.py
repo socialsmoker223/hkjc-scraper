@@ -42,6 +42,7 @@ def sample_race_html():
 def sample_race_response(sample_race_html):
     from bs4 import BeautifulSoup
     from scrapling.spiders import Request
+    from urllib.parse import urljoin
 
     class MockResponse:
         def __init__(self, html):
@@ -69,6 +70,10 @@ def sample_race_response(sample_race_html):
                     return [MockElem(e) for e in self._el.select(selector)]
 
             return MockElem(elem)
+
+        def urljoin(self, url):
+            """Join relative URL with base URL."""
+            return urljoin(self.url, url)
 
         def follow(self, url, callback=None, meta=None):
             """Mock follow method that returns a Request object."""
