@@ -6,6 +6,7 @@ from hkjc_scraper.parsers import (
     parse_prize,
     parse_running_position,
     generate_race_id,
+    parse_sectional_time_cell,
 )
 
 
@@ -100,3 +101,33 @@ class TestGenerateRaceId:
 
     def test_generate_race_id_hv(self):
         assert generate_race_id("2026/03/01", "HV", 5) == "2026-03-01-HV-5"
+
+
+class TestParseSectionalTimeCell:
+    """Test sectional time cell parsing."""
+
+    def test_parse_sectional_time_cell_valid(self):
+        """Test parsing a valid sectional time cell with position, margin, time."""
+        result = parse_sectional_time_cell("4 1-3/4 14.16")
+        assert result["position"] == 4
+        assert result["margin"] == "1-3/4"
+        assert result["time"] == 14.16
+
+    def test_parse_sectional_time_cell_no_margin(self):
+        """Test parsing a cell without margin (leader)."""
+        result = parse_sectional_time_cell("1 14.00")
+        assert result["position"] == 1
+        assert result["margin"] == ""
+        assert result["time"] == 14.00
+
+    def test_parse_sectional_time_cell_neck(self):
+        """Test parsing a cell with 'nk' (neck) margin."""
+        result = parse_sectional_time_cell("2 nk 14.05")
+        assert result["position"] == 2
+        assert result["margin"] == "nk"
+        assert result["time"] == 14.05
+
+    def test_parse_sectional_time_cell_empty(self):
+        """Test parsing an empty cell returns None."""
+        result = parse_sectional_time_cell("")
+        assert result is None

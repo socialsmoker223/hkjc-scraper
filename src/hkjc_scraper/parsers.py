@@ -166,3 +166,39 @@ def generate_race_id(race_date: str, racecourse: str, race_no: int) -> str:
     # Normalize date format from YYYY/MM/DD to YYYY-MM-DD
     normalized_date = race_date.replace("/", "-")
     return f"{normalized_date}-{racecourse}-{race_no}"
+
+
+def parse_sectional_time_cell(cell_text: str) -> dict[str, int | str | float] | None:
+    """Extract position, margin, time from a section cell.
+
+    Args:
+        cell_text: Cell text like "4 1-3/4 14.16" or "4 14.16"
+
+    Returns:
+        {"position": int, "margin": str, "time": float} or None if empty
+    """
+    if not cell_text or not cell_text.strip():
+        return None
+
+    parts = cell_text.strip().split()
+    if len(parts) < 2:
+        return None
+
+    # First part is always position
+    try:
+        position = int(parts[0])
+    except ValueError:
+        return None
+
+    # Last part is always time
+    try:
+        time = float(parts[-1])
+    except ValueError:
+        return None
+
+    # Middle parts (if any) form the margin
+    margin = ""
+    if len(parts) > 2:
+        margin = " ".join(parts[1:-1])
+
+    return {"position": position, "margin": margin, "time": time}
