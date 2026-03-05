@@ -1,13 +1,15 @@
 import pytest
-from hkjc_scraper.profile_parsers import (
+from hkjc_scraper.id_parsers import (
     extract_horse_id,
     extract_jockey_id,
     extract_trainer_id,
-    parse_horse_profile,
+)
+from hkjc_scraper.horse_parsers import parse_horse_profile
+from hkjc_scraper.jockey_trainer_parsers import (
     parse_jockey_profile,
     parse_trainer_profile,
-    parse_career_record,
 )
+from hkjc_scraper.common import parse_career_record
 
 def test_extract_horse_id_from_href():
     href = "/zh-hk/local/information/horse?horseid=HK_2024_K306"
