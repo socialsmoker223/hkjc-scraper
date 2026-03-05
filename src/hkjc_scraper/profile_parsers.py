@@ -261,9 +261,10 @@ def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dic
 
     for row in rows:
         cells = row.css("td")
-        if len(cells) >= 2:
+        # HKJC uses 6-column structure: label, ":", value, label, ":", value
+        if len(cells) >= 3:
             label = cells[0].text
-            value = cells[1].text
+            value = cells[2].text
 
             if not label or not value:
                 continue
@@ -370,9 +371,10 @@ def parse_trainer_profile(response: Any, trainer_id: str, trainer_name: str) -> 
 
     for row in rows:
         cells = row.css("td")
-        if len(cells) >= 2:
+        # HKJC uses 6-column structure: label, ":", value, label, ":", value
+        if len(cells) >= 3:
             label = cells[0].text
-            value = cells[1].text
+            value = cells[2].text
 
             if not label or not value:
                 continue

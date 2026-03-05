@@ -304,12 +304,14 @@ def test_parse_jockey_profile_basic_info():
                 成就： Test achievements
                 在港累積232場勝出率百分之12.4
             """
+            # HKJC uses 6-column structure: label, ":", value, label, ":", value
+            # For single pairs, we still need 3 cells: label, ":", value
             self.rows = [
-                MockRow(["年齡 ：", "45歲"]),
-                MockRow(["冠 ：", "32"]),
-                MockRow(["亞 ：", "42"]),
-                MockRow(["勝出率 ：", "11.76%"]),
-                MockRow(["所贏獎金 ：", "$54,862,525"]),
+                MockRow(["年齡 ：", "：", "45歲"]),
+                MockRow(["冠 ：", "：", "32"]),
+                MockRow(["亞 ：", "：", "42"]),
+                MockRow(["勝出率 ：", "：", "11.76%"]),
+                MockRow(["所贏獎金 ：", "：", "$54,862,525"]),
             ]
 
         def css(self, selector):
@@ -406,15 +408,17 @@ def test_parse_trainer_profile_basic_info():
                 成就： Test achievements
                 在港累積1166場勝出率百分之9.6
             """
+            # HKJC uses 6-column structure: label, ":", value, label, ":", value
+            # For single pairs, we still need 3 cells: label, ":", value
             self.rows = [
-                MockRow(["年齡 ：", "58歲"]),
-                MockRow(["冠 ：", "37"]),
-                MockRow(["亞 ：", "27"]),
-                MockRow(["季 ：", "22"]),
-                MockRow(["殿 ：", "22"]),
-                MockRow(["出馬總數 ：", "310"]),
-                MockRow(["勝出率 ：", "11.94%"]),
-                MockRow(["所贏獎金 ：", "$49,009,255"]),
+                MockRow(["年齡 ：", "：", "58歲"]),
+                MockRow(["冠 ：", "：", "37"]),
+                MockRow(["亞 ：", "：", "27"]),
+                MockRow(["季 ：", "：", "22"]),
+                MockRow(["殿 ：", "：", "22"]),
+                MockRow(["出馬總數 ：", "：", "310"]),
+                MockRow(["勝出率 ：", "：", "11.94%"]),
+                MockRow(["所贏獎金 ：", "：", "$49,009,255"]),
             ]
 
         def css(self, selector):
