@@ -623,37 +623,63 @@ class HKJCRacingSpider(Spider):
         """Check if response contains valid race data.
 
         Args:
-            response: The HTTP response object
+            response: Scrapling response object
 
         Returns:
             True if page has valid race data, False otherwise
         """
-        # Stub implementation - will be completed in Task 4
-        # A valid race page should have race results table
-        page_text = response.get_all_text()
-        return "賽事結果" in page_text or "localresults" in response.url
+        # Check for common indicators of no data
+        text = response.text
+
+        # No data indicators
+        no_data_patterns = [
+            "沒有赛事",  # No races (Chinese)
+            "沒有賽事",
+            "No races",
+            "暫沒有賽事",  # No races at the moment
+        ]
+
+        for pattern in no_data_patterns:
+            if pattern in text:
+                return False
+
+        # Check for race number selector or links
+        # Valid pages have race number options or links
+        if response.css("#selectId option"):
+            return True
+
+        if response.css('a[href*="RaceNo="]'):
+            return True
+
+        return False
 
     def _count_races(self, response) -> int:
-        """Count the number of races on a race day page.
+        """Count the number of races on the page.
 
         Args:
-            response: The HTTP response object
+            response: Scrapling response object
 
         Returns:
-            Number of races found
+            Number of races (1-11)
         """
-        # Stub implementation - will be completed in Task 4
-        # Count race number links or dropdown options
+        # Try to count from dropdown options
+        options = response.css("#selectId option")
+        if options:
+            return len(options)
+
+        # Alternative: count race number links
         race_links = response.css('a[href*="RaceNo="]')
         if race_links:
-            race_nos = set()
+            # Extract unique race numbers
+            race_numbers = set()
             for link in race_links:
                 href = link.attrib.get("href", "")
+                # Extract RaceNo=XX from href
                 if "RaceNo=" in href:
-                    try:
-                        race_no = href.split("RaceNo=")[1].split("&")[0]
-                        race_nos.add(race_no)
-                    except (IndexError, ValueError):
-                        pass
-            return len(race_nos) if race_nos else 0
-        return 0
+                    match = re.search(r'RaceNo=(\d+)', href)
+                    if match:
+                        race_numbers.add(int(match.group(1)))
+
+            return len(race_numbers) if race_numbers else 1
+
+        return 1  # Default to at least 1 race
