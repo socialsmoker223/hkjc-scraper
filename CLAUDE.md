@@ -179,7 +179,7 @@ The `data/.discovered_dates.json` cache stores discovered dates for fast re-runs
 | Table | Description |
 |-------|-------------|
 | `races` | Race metadata (date, class, distance, going, prize) |
-| `performance` | Horse results per race (position, time, odds, jockey_id, trainer_id) |
+| `performance` | Horse results per race (position, time, odds, jockey_id, trainer_id). Position may be numeric ("1", "2") or special status codes ("DISQ", "DNF", "PU", etc.) |
 | `dividends` | Payout information by pool type |
 | `incidents` | Race incident reports |
 | `horses` | Horse profiles (sire, dam, age, colour, gender, ratings, prize money) |
@@ -213,10 +213,35 @@ IDs are extracted from URL query parameters:
 
 The extraction functions use compiled regex patterns for performance.
 
-### Chinese Numerals
+### Position Parsing
 
-The `_CHINESE_NUMERALS` constant maps Chinese numerals to digits for position parsing:
-- 一 → 1, 二 → 2, 三 → 3, etc.
+The `clean_position` function handles multiple position formats:
+
+1. **Special status codes** - Preserved as-is (case-insensitive):
+   - `DISQ` - Disqualified (取消資格)
+   - `DNF` - Did Not Finish (未有跑畢全程)
+   - `FE` - Fell (馬匹在賽事中跌倒)
+   - `ML` - Multiple Lengths (多個馬位)
+   - `PU` - Pulled Up (拉停)
+   - `TNP` - Took No Part (并無參賽競逐)
+   - `TO` - Tailed Off (遙遙落後)
+   - `UR` - Unseated Rider (騎師墮馬)
+   - `VOID` - Void Race (賽事無效)
+   - `WR` - Withdrawn by Starter (司閘員著令退出)
+   - `WV` - Withdrawn Veterinary (因健康理由宣佈退出)
+   - `WV-A` - Withdrawn Veterinary After Weigh-in
+   - `WX` - Withdrawn Stewards (競賽董事小組著令退出)
+   - `WX-A` - Withdrawn Stewards After Weigh-in
+   - `WXNR` - Withdrawn Stewards No Runner
+
+2. **Chinese numerals** - Mapped to digits:
+   - 一 → 1, 二 → 2, 三 → 3, etc.
+
+3. **Numeric positions** - Extracted from strings
+
+See: https://racing.hkjc.com/zh-hk/local/page/special-race-index
+
+### Chinese Numerals
 
 ### Rating Format
 
