@@ -26,3 +26,6 @@ asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests (makes network requests)",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:lxml.html",
+]
