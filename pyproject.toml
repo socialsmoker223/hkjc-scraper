@@ -5,6 +5,7 @@ description = "HKJC Racing Scraper - Extract horse racing data from Hong Kong Jo
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiolimiter>=1.2.1",
     "scrapling[all]>=0.4.1",
 ]
 

@@ -1,6 +1,7 @@
 """HKJC Racing Spider - Proper Scrapling Spider implementation."""
 
 import asyncio
+import random
 import re
 from scrapling.spiders import Spider, Request
 from scrapling.fetchers import Fetcher
@@ -38,16 +39,74 @@ class HKJCRacingSpider(Spider):
     BASE_URL = "https://racing.hkjc.com/zh-hk/local/information/localresults"
     concurrent_requests = 5
 
-    def __init__(self, dates: list | None = None, racecourse: str | None = None, **kwargs):
+    def __init__(
+        self,
+        dates: list | None = None,
+        racecourse: str | None = None,
+        rate_limit: float | None = None,
+        rate_jitter: float = 0.0,
+        **kwargs,
+    ):
+        """Initialize the spider.
+
+        Args:
+            dates: List of dates to scrape (YYYY/MM/DD format)
+            racecourse: Race course code (ST or HV)
+            rate_limit: Maximum requests per second (None for no limit)
+            rate_jitter: Random jitter factor for request intervals (0.0-1.0)
+            **kwargs: Additional keyword arguments passed to Spider base class
+        """
         super().__init__(**kwargs)
         self.dates = dates
         self.racecourse = racecourse
+        self._rate_limit = rate_limit
+        self._rate_jitter = max(0.0, min(1.0, rate_jitter))
         # Initialize deduplication sets
         self._seen_horses = set()
         self._seen_jockeys = set()
         self._seen_trainers = set()
         # Initialize fetcher for direct HTTP requests
         self._fetcher = Fetcher()
+        # Rate limiter using asyncio.Semaphore for simple rate limiting
+        self._limiter = None
+        self._last_request_time = 0
+        self._min_interval = 1.0 / rate_limit if rate_limit and rate_limit > 0 else 0
+
+        if self._rate_limit and self._rate_limit > 0:
+            # Create a semaphore that allows concurrent_requests at a time
+            # but we'll add delays between actual requests
+            self._limiter = asyncio.Semaphore(self.concurrent_requests)
+
+    async def _apply_rate_limit(self):
+        """Apply rate limiting with optional jitter before a request.
+
+        This method sleeps if necessary to maintain the configured rate limit.
+        """
+        if not self._rate_limit or self._rate_limit <= 0:
+            return
+
+        # Calculate minimum time between requests
+        interval = self._min_interval
+
+        # Add jitter if configured
+        if self._rate_jitter > 0:
+            # Jitter adds +/- rate_jitter * 100% variance
+            jitter_amount = interval * self._rate_jitter
+            # Random between -jitter_amount and +jitter_amount
+            jitter = random.uniform(-jitter_amount, jitter_amount)
+            interval = max(0, interval + jitter)
+
+        # Calculate time since last request
+        now = asyncio.get_event_loop().time()
+        time_since_last = now - self._last_request_time
+
+        # Sleep if we need to maintain the rate limit
+        if time_since_last < interval:
+            sleep_time = interval - time_since_last
+            await asyncio.sleep(sleep_time)
+
+        # Update last request time
+        self._last_request_time = asyncio.get_event_loop().time()
 
     async def fetch(self, url: str):
         """Fetch a URL directly and return the response.
@@ -61,6 +120,9 @@ class HKJCRacingSpider(Spider):
         Returns:
             Response object with text and css methods
         """
+        # Apply rate limiting before each fetch
+        await self._apply_rate_limit()
+
         # Run the synchronous fetch in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, self._fetcher.get, url)

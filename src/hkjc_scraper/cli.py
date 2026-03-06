@@ -26,18 +26,31 @@ def group_items_by_table(items: list) -> dict:
     return grouped
 
 
-async def crawl_race(date: str | None = None, racecourse: str = "ST", output_dir: str = "data") -> dict:
+async def crawl_race(
+    date: str | None = None,
+    racecourse: str = "ST",
+    output_dir: str = "data",
+    rate_limit: float | None = None,
+    rate_jitter: float = 0.0,
+) -> dict:
     """Crawl race data from HKJC website.
 
     Args:
         date: Race date in YYYY/MM/DD format, or None for latest
         racecourse: Race course code (ST for Sha Tin, HV for Happy Valley)
         output_dir: Directory to save output JSON files
+        rate_limit: Maximum requests per second (None for no limit)
+        rate_jitter: Random jitter factor for request intervals (0.0-1.0)
 
     Returns:
         Dictionary with table names as keys and lists of scraped data
     """
-    spider = HKJCRacingSpider(dates=[date] if date else None, racecourse=racecourse)
+    spider = HKJCRacingSpider(
+        dates=[date] if date else None,
+        racecourse=racecourse,
+        rate_limit=rate_limit,
+        rate_jitter=rate_jitter,
+    )
     result = await spider.run()
     grouped = group_items_by_table(result.items)
 
@@ -103,6 +116,24 @@ async def async_main() -> None:
         help="Racecourse (ST=Sha Tin, HV=Happy Valley)",
     )
     parser.add_argument("--output", default="data", help="Output directory")
+
+    # Rate limiting options
+    parser.add_argument(
+        "--rate-limit",
+        type=float,
+        default=None,
+        help="Maximum requests per second (e.g., 2.0 for 2 requests/second). "
+             "Default: no limit (use with caution to avoid IP bans).",
+    )
+    parser.add_argument(
+        "--rate-jitter",
+        type=float,
+        default=0.2,
+        help="Random jitter factor for request intervals (0.0-1.0). "
+             "Adds randomness to request timing to appear more human-like. "
+             "Default: 0.2 (20%% variance).",
+    )
+
     args = parser.parse_args()
 
     # Handle --auto-all mode
@@ -120,7 +151,10 @@ async def async_main() -> None:
 
     # Handle --discover mode
     if args.discover:
-        spider = HKJCRacingSpider()
+        spider = HKJCRacingSpider(
+            rate_limit=args.rate_limit,
+            rate_jitter=args.rate_jitter,
+        )
         dates = await spider.discover_dates(
             start_date=start_date,
             end_date=end_date,
@@ -133,7 +167,10 @@ async def async_main() -> None:
 
     # Handle --start-date mode: discover dates first, then scrape discovered dates
     if start_date:
-        spider = HKJCRacingSpider()
+        spider = HKJCRacingSpider(
+            rate_limit=args.rate_limit,
+            rate_jitter=args.rate_jitter,
+        )
         print(f"Discovering race dates from {start_date}" + (f" to {end_date}" if end_date else "..."))
         dates = await spider.discover_dates(
             start_date=start_date,
@@ -143,7 +180,12 @@ async def async_main() -> None:
         print(f"Discovered {len(dates)} race dates. Scraping...")
         # Extract just the date strings for scraping
         date_strings = [entry["date"] for entry in dates]
-        spider = HKJCRacingSpider(dates=date_strings, racecourse=args.racecourse)
+        spider = HKJCRacingSpider(
+            dates=date_strings,
+            racecourse=args.racecourse,
+            rate_limit=args.rate_limit,
+            rate_jitter=args.rate_jitter,
+        )
         result = await spider.run()
         grouped = group_items_by_table(result.items)
 
@@ -167,7 +209,7 @@ async def async_main() -> None:
         return
 
     # Default behavior: scrape single date
-    await crawl_race(args.date, args.racecourse, args.output)
+    await crawl_race(args.date, args.racecourse, args.output, args.rate_limit, args.rate_jitter)
 
 
 def main() -> None:
