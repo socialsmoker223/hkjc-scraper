@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 import sys
 
@@ -97,6 +98,11 @@ async def async_main() -> None:
     # Existing options
     parser.add_argument("--date", help="Race date (YYYY/MM/DD format)")
     parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="Scrape today's races (auto-discovers dates, defaults to both ST and HV)",
+    )
+    parser.add_argument(
         "--racecourse",
         choices=["ST", "HV"],
         default="ST",
@@ -129,6 +135,59 @@ async def async_main() -> None:
         print(f"\nDiscovered {len(dates)} race dates:")
         for entry in sorted(dates, key=lambda d: (d["date"], d["racecourse"])):
             print(f"  {entry['date']} @ {entry['racecourse']} ({entry['race_count']} races)")
+        return
+
+    # Handle --latest mode: discover and scrape today's races
+    if args.latest:
+        today = datetime.now().strftime("%Y/%m/%d")
+        spider = HKJCRacingSpider()
+        print(f"Discovering races for {today}...")
+        dates = await spider.discover_dates(
+            start_date=today,
+            end_date=today,
+            refresh_cache=args.refresh_cache,
+        )
+
+        if not dates:
+            print(f"No races found for {today}")
+            return
+
+        # Group by racecourse and display summary
+        by_racecourse = {"ST": 0, "HV": 0}
+        for entry in dates:
+            by_racecourse[entry["racecourse"]] = entry["race_count"]
+
+        total_races = sum(by_racecourse.values())
+        print(f"Found {total_races} races:")
+        if by_racecourse["ST"]:
+            print(f"  Sha Tin (ST): {by_racecourse['ST']} races")
+        if by_racecourse["HV"]:
+            print(f"  Happy Valley (HV): {by_racecourse['HV']} races")
+        print("Scraping...")
+
+        # Scrape all discovered dates (respects --racecourse if specified)
+        date_strings = [entry["date"] for entry in dates]
+        spider = HKJCRacingSpider(dates=date_strings, racecourse=args.racecourse)
+        result = await spider.run()
+        grouped = group_items_by_table(result.items)
+
+        # Create output directory
+        out_path = Path(args.output)
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        # Save each table's data to a separate JSON file
+        for table_name, data in grouped.items():
+            if data:
+                file_path = out_path / f"{table_name}_{today.replace('/', '-')}.json"
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                print(f"Saved {len(data)} {table_name} records to {file_path}")
+
+        # Print summary
+        print(f"\nSummary:")
+        for table_name, data in grouped.items():
+            print(f"  {table_name}: {len(data)} records")
+        print(f"  Total requests: {result.stats.requests_count}")
         return
 
     # Handle --start-date mode: discover dates first, then scrape discovered dates
