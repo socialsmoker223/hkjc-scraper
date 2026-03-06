@@ -81,13 +81,13 @@ The scraper can discover and scrape historical races (pre-2024) that are not sho
 
 ```bash
 # Discover historical races in a date range
-hkjc-scrape --discover --start-date 2015/01/01 --end-date 2019/12/31
+uv run hkjc-scrape --discover --start-date 2015/01/01 --end-date 2019/12/31
 
 # Scrape specific date range (uses cache)
-hkjc-scrape --start-date 2015/01/01 --end-date 2019/12/31 --racecourse ST
+uv run hkjc-scrape --start-date 2015/01/01 --end-date 2019/12/31 --racecourse ST
 
 # Discover all historical races (2000-2024)
-hkjc-scrape --discover --start-date 2000/01/01 --end-date 2024/09/01 --auto-all
+uv run hkjc-scrape --discover --start-date 2000/01/01 --end-date 2024/09/01 --auto-all
 ```
 
 **Note:** Racing seasons run from September to July. August is the off-season with only overseas races.
