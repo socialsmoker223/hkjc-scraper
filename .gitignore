@@ -18,3 +18,4 @@ data/
 
 # Claude Code settings (optional - comment out if you want to track them)
 .claude/
+.worktrees/
