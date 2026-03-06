@@ -604,6 +604,10 @@ class HKJCRacingSpider(Spider):
             """Check if a date + racecourse has valid races."""
             # Check cache first unless refreshing
             if not refresh_cache and cache.is_cached(date, racecourse):
+                # Return cached entry if available
+                for entry in cache.data["discovered"]:
+                    if entry["date"] == date and entry["racecourse"] == racecourse:
+                        return entry
                 return None
 
             # Skip August (season break)
@@ -654,7 +658,9 @@ class HKJCRacingSpider(Spider):
             True if page has valid race data, False otherwise
         """
         # Check for common indicators of no data
-        text = response.text
+        # Note: response.text returns an empty TextHandler for Fetcher responses
+        # Use get_all_text() instead to get the actual text content
+        text = str(response.get_all_text())
 
         # No data indicators
         no_data_patterns = [

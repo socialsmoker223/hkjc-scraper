@@ -9,8 +9,8 @@ async def test_discover_small_date_range():
 
     # Discover one week (should have at least one race day)
     discovered = await spider.discover_dates(
-        start_date="2015/01/01",
-        end_date="2015/01/07"
+        start_date="2015/01/10",
+        end_date="2015/01/14"
     )
 
     # Should find some races
@@ -32,14 +32,14 @@ async def test_discover_respects_cache():
 
     # First discovery
     discovered1 = await spider.discover_dates(
-        start_date="2015/01/01",
-        end_date="2015/01/07"
+        start_date="2015/01/10",
+        end_date="2015/01/14"
     )
 
     # Second discovery should be instant (uses cache)
     discovered2 = await spider.discover_dates(
-        start_date="2015/01/01",
-        end_date="2015/01/07"
+        start_date="2015/01/10",
+        end_date="2015/01/14"
     )
 
     assert len(discovered1) == len(discovered2)
