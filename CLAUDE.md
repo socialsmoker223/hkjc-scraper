@@ -176,16 +176,119 @@ The `data/.discovered_dates.json` cache stores discovered dates for fast re-runs
 
 ### Output Tables
 
-| Table | Description |
-|-------|-------------|
-| `races` | Race metadata (date, class, distance, going, prize) |
-| `performance` | Horse results per race (position, time, odds, jockey_id, trainer_id). Position may be numeric ("1", "2") or special status codes ("DISQ", "DNF", "PU", etc.) |
-| `dividends` | Payout information by pool type |
-| `incidents` | Race incident reports |
-| `horses` | Horse profiles (sire, dam, age, colour, gender, ratings, prize money) |
-| `jockeys` | Jockey profiles (background, achievements, career stats) |
-| `trainers` | Trainer profiles (background, achievements, career stats) |
-| `sectional_times` | Per-horse sectional time data |
+#### `races` - Race metadata
+| Field | Type | Description |
+|-------|------|-------------|
+| `race_id` | string | Unique ID (format: YYYY-MM-DD-CC-N) |
+| `race_date` | string | Race date (YYYY/MM/DD format) |
+| `race_no` | int | Race number (1-11) |
+| `racecourse` | string | "沙田" or "谷草" |
+| `class` | string | Race class (e.g., "第四班") |
+| `distance` | int | Race distance in meters |
+| `rating` | object | `{"high": int, "low": int}` |
+| `going` | string | Track condition |
+| `surface` | string | "草地" or "全天候" |
+| `track` | string | Full track description |
+| `sectional_times` | array | List of sectional time strings |
+| `prize_money` | int | Total prize money |
+| `race_name` | string | Race name (optional) |
+
+#### `performance` - Horse results per race
+| Field | Type | Description |
+|-------|------|-------------|
+| `race_id` | string | Foreign key to races |
+| `position` | string | Finishing position ("1", "2", "DISQ", "DNF", "PU", etc.) |
+| `horse_no` | string | Horse number |
+| `horse_id` | string | Horse ID (nullable) |
+| `horse_name` | string | Horse name |
+| `jockey` | string | Jockey name |
+| `jockey_id` | string | Jockey ID (nullable) |
+| `trainer` | string | Trainer name |
+| `trainer_id` | string | Trainer ID (nullable) |
+| `actual_weight` | string | Carried weight |
+| `body_weight` | string | Horse weight |
+| `draw` | string | Draw position |
+| `margin` | string | Margin to winner |
+| `running_position` | array | List of running positions |
+| `finish_time` | string | Finishing time |
+| `win_odds` | string | Winning odds |
+
+#### `dividends` - Payout information
+| Field | Type | Description |
+|-------|------|-------------|
+| `race_id` | string | Foreign key to races |
+| `pool` | string | Pool type (獨贏, 位置, 連贏, etc.) |
+| `winning_combination` | string | Winning numbers |
+| `payout` | string | Payout amount |
+
+#### `incidents` - Race incident reports
+| Field | Type | Description |
+|-------|------|-------------|
+| `race_id` | string | Foreign key to races |
+| `position` | string | Horse position |
+| `horse_no` | string | Horse number |
+| `horse_name` | string | Horse name |
+| `incident_report` | string | Incident description |
+
+#### `horses` - Horse profiles
+| Field | Type | Description |
+|-------|------|-------------|
+| `horse_id` | string | Unique horse ID |
+| `name` | string | Horse name |
+| `country_of_birth` | string | Birth country |
+| `age` | string | Horse age |
+| `colour` | string | Horse colour |
+| `gender` | string | Horse gender |
+| `sire` | string | Sire name |
+| `dam` | string | Dam name |
+| `damsire` | string | Damsire name |
+| `trainer` | string | Trainer name |
+| `owner` | string | Owner name |
+| `current_rating` | int | Current rating |
+| `initial_rating` | int | Season start rating |
+| `season_prize` | int | Season prize money |
+| `total_prize` | int | Career prize money |
+| `wins` | int | Career wins |
+| `places` | int | Career places |
+| `shows` | int | Career shows |
+| `total` | int | Career total races |
+| `location` | string | Import location |
+| `import_type` | string | Import type |
+| `import_date` | string | Import date |
+
+#### `jockeys` - Jockey profiles
+| Field | Type | Description |
+|-------|------|-------------|
+| `jockey_id` | string | Unique jockey ID |
+| `name` | string | Jockey name |
+| `age` | string | Jockey age |
+| `background` | string | Background info |
+| `achievements` | string | Achievements |
+| `career_wins` | int | Career wins |
+| `career_win_rate` | string | Career win rate |
+| `season_stats` | object | `{wins, places, win_rate, prize_money}` |
+
+#### `trainers` - Trainer profiles
+| Field | Type | Description |
+|-------|------|-------------|
+| `trainer_id` | string | Unique trainer ID |
+| `name` | string | Trainer name |
+| `age` | string | Trainer age |
+| `background` | string | Background info |
+| `achievements` | string | Achievements |
+| `career_wins` | int | Career wins |
+| `career_win_rate` | string | Career win rate |
+| `season_stats` | object | `{wins, places, shows, fourth, total_runners, win_rate, prize_money}` |
+
+#### `sectional_times` - Per-horse sectional time data
+| Field | Type | Description |
+|-------|------|-------------|
+| `race_id` | string | Foreign key to races |
+| `horse_no` | string | Horse number |
+| `section_number` | int | Section number |
+| `position` | int | Position at section |
+| `margin` | string | Margin at section |
+| `time` | float | Sectional time |
 
 ### Output Format
 
