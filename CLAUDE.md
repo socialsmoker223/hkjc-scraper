@@ -158,6 +158,20 @@ uv run hkjc-scrape --date 2026/03/01 --racecourse ST
 uv run hkjc-scrape --racecourse ST
 ```
 
+### Scraping Historical Races
+
+Historical races (pre-2024) are not in the dropdown but accessible via direct URLs:
+
+```bash
+# Discover races first
+hkjc-scrape --discover --start-date 2015/01/01 --end-date 2015/12/31
+
+# Then scrape discovered dates
+hkjc-scrape --start-date 2015/01/01 --end-date 2015/12/31 --racecourse ST
+```
+
+The `data/.discovered_dates.json` cache stores discovered dates for fast re-runs.
+
 ## Data Model
 
 ### Output Tables
