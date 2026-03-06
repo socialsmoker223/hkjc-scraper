@@ -127,8 +127,8 @@ async def async_main() -> None:
             refresh_cache=args.refresh_cache,
         )
         print(f"\nDiscovered {len(dates)} race dates:")
-        for date in sorted(dates):
-            print(f"  {date}")
+        for entry in sorted(dates, key=lambda d: (d["date"], d["racecourse"])):
+            print(f"  {entry['date']} @ {entry['racecourse']} ({entry['race_count']} races)")
         return
 
     # Handle --start-date mode: discover dates first, then scrape discovered dates
@@ -141,7 +141,9 @@ async def async_main() -> None:
             refresh_cache=args.refresh_cache,
         )
         print(f"Discovered {len(dates)} race dates. Scraping...")
-        spider = HKJCRacingSpider(dates=dates, racecourse=args.racecourse)
+        # Extract just the date strings for scraping
+        date_strings = [entry["date"] for entry in dates]
+        spider = HKJCRacingSpider(dates=date_strings, racecourse=args.racecourse)
         result = await spider.run()
         grouped = group_items_by_table(result.items)
 
