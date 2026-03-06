@@ -1,7 +1,9 @@
 """HKJC Racing Spider - Proper Scrapling Spider implementation."""
 
+import asyncio
 import re
 from scrapling.spiders import Spider, Request
+from scrapling.fetchers import Fetcher
 
 from hkjc_scraper.data_parsers import (
     clean_position,
@@ -44,6 +46,29 @@ class HKJCRacingSpider(Spider):
         self._seen_horses = set()
         self._seen_jockeys = set()
         self._seen_trainers = set()
+        # Initialize fetcher for direct HTTP requests
+        self._fetcher = Fetcher()
+
+    async def fetch(self, url: str):
+        """Fetch a URL directly and return the response.
+
+        This is used by discover_dates to make direct HTTP requests
+        without going through the spider's request/response cycle.
+
+        Args:
+            url: URL to fetch
+
+        Returns:
+            Response object with text and css methods
+        """
+        # Run the synchronous fetch in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, self._fetcher.get, url)
+        if response:
+            # The Fetcher returns a response, but we need to ensure it has
+            # the interface expected by _is_valid_race_page and _count_races
+            return response
+        return None
 
     async def start_requests(self):
         if self.dates:
