@@ -12,6 +12,8 @@ Extract horse racing data from Hong Kong Jockey Club (HKJC) using Scrapling Spid
 - Async crawling with concurrent requests
 - Normalized Supabase-compatible output
 - Sectional times (per-horse, per-section position and time data)
+- SQLite database export (built-in Python 3.13+)
+- Analytics module for performance analysis and insights
 
 ## Module Organization
 
@@ -24,6 +26,8 @@ The scraper is organized into focused modules:
 - **jockey_trainer_parsers.py** - Jockey and trainer profile parsing
 - **spider.py** - Main spider implementation
 - **cli.py** - Command-line interface
+- **database.py** - SQLite database schema and import/export functions
+- **analytics.py** - Statistical analysis functions for racing data
 
 ### Public API
 
@@ -55,6 +59,15 @@ uv run hkjc-scrape --date 2026/03/01 --racecourse ST
 
 # Discover and crawl latest race
 uv run hkjc-scrape --racecourse ST
+
+# Export to SQLite database after scraping
+uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-sqlite
+
+# Run analytics on existing data (reads from database if exists, otherwise JSON files)
+uv run hkjc-scrape --analyze
+
+# Run analytics with JSON output
+uv run hkjc-scrape --analyze --analyze-format json
 ```
 
 ### Programmatic Usage
@@ -105,6 +118,7 @@ uv run hkjc-scrape --discover --start-date 2000/01/01 --end-date 2024/09/01 --au
 - **sectional_times** - Per-horse sectional time data (position, margin, time at each section)
 
 ### Output Format
+
 Data is saved as JSON with UTF-8 encoding:
 ```
 data/
@@ -117,6 +131,43 @@ data/
 ├── trainers_2026-03-01.json
 └── sectional_times_2026-03-01.json
 ```
+
+### SQLite Database
+
+Use `--export-sqlite` to export scraped JSON data to SQLite:
+
+```bash
+uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-sqlite --db-path data/racing.db
+```
+
+The database includes:
+- All 8 tables with proper foreign key constraints
+- Indexes on frequently queried columns
+- ON DELETE CASCADE for referential integrity
+- JSON serialization for complex fields (rating, sectional_times, running_position)
+
+### Analytics
+
+The analytics module provides statistical analysis:
+
+```bash
+# Run analytics (text output)
+uv run hkjc-scrape --analyze
+
+# JSON output for programmatic use
+uv run hkjc-scrape --analyze --analyze-format json
+```
+
+Analytics include:
+- Jockey performance (win rate, top jockeys)
+- Trainer performance (win rate, top trainers)
+- Draw bias analysis (position advantages)
+- Track bias (going, surface preferences)
+- Class performance breakdown
+- Horse form trends
+- Jockey-Trainer combinations
+- Distance preferences
+- Speed ratings
 
 ## Testing
 

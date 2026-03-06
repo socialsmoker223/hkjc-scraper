@@ -20,8 +20,10 @@ The codebase is organized into focused modules under `src/hkjc_scraper/`:
 | Module | Purpose | Key Functions |
 |--------|---------|---------------|
 | `spider.py` | Main spider implementation | `HKJCRacingSpider` class |
-| `cli.py` | Command-line interface | `main()` entry point |
-| `__init__.py` | Public API exports | 13 exported functions |
+| `cli.py` | Command-line interface | `main()` entry point with `--export-sqlite`, `--analyze` flags |
+| `database.py` | SQLite database layer | `create_database`, `export_json_to_db`, `load_from_db`, `import_*` functions |
+| `analytics.py` | Statistical analysis | `calculate_jockey_performance`, `calculate_draw_bias`, `generate_racing_summary`, etc. |
+| `__init__.py` | Public API exports | 40+ exported functions |
 
 ### Parser Modules
 
@@ -87,11 +89,66 @@ from hkjc_scraper import (
     clean_position,
     parse_horse_profile,
     parse_jockey_profile,
+    # Database
+    create_database,
+    export_json_to_db,
+    load_from_db,
+    # Analytics
+    calculate_jockey_performance,
+    calculate_draw_bias,
     # ... etc
 )
 ```
 
 **Do NOT** import directly from submodules in user code or application code.
+
+### Database Module (`database.py`)
+
+SQLite is built into Python 3.13+ - no external dependencies needed.
+
+**Core Functions:**
+- `create_database(db_path)` - Creates all tables with indexes
+- `get_db_connection(db_path)` - Returns connection with FKs enabled
+- `export_json_to_db(data_dir, db_path)` - Bulk export from JSON files
+
+**Import Functions** (one per table):
+- `import_races(data, conn)` - Race metadata
+- `import_performance(data, conn)` - Horse results per race
+- `import_dividends(data, conn)` - Payout information
+- `import_incidents(data, conn)` - Race incidents
+- `import_horses(data, conn)` - Horse profiles
+- `import_jockeys(data, conn)` - Jockey profiles
+- `import_trainers(data, conn)` - Trainer profiles
+- `import_sectional_times(data, conn)` - Sectional time data
+
+**Query Functions:**
+- `load_from_db(db_path, table, where_clause, params)` - Load data as dicts
+
+**Database Schema Features:**
+- Foreign key constraints with ON DELETE CASCADE/SET NULL
+- Indexes on frequently queried columns (race_date, horse_id, jockey_id, trainer_id)
+- Complex types serialized as JSON (rating, sectional_times, running_position)
+- Unique constraints to prevent duplicates
+
+### Analytics Module (`analytics.py`)
+
+**Performance Analysis:**
+- `calculate_jockey_performance(performances)` - Win rate, rides, places per jockey
+- `calculate_trainer_performance(performances)` - Win rate, runners per trainer
+- `calculate_horse_form(performances, horses, recent_races)` - Recent form analysis
+
+**Track & Draw Analysis:**
+- `calculate_draw_bias(performances, races)` - Win rate by draw position
+- `calculate_track_bias(performances, races)` - Performance by going/surface
+- `calculate_distance_preference(performances, races)` - Results by distance
+
+**Combination Analysis:**
+- `calculate_jockey_trainer_combination(performances)` - JT pair performance
+- `calculate_class_performance(performances, races)` - Results by race class
+
+**Speed & Summary:**
+- `calculate_speed_ratings(performances, races)` - Relative speed ratings
+- `generate_racing_summary(performances, races)` - Overall statistics
 
 ## Testing
 
@@ -156,6 +213,12 @@ uv run hkjc-scrape --date 2026/03/01 --racecourse ST
 
 # Auto-discover latest race
 uv run hkjc-scrape --racecourse ST
+
+# Export to SQLite database after scraping
+uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-sqlite
+
+# Run analytics on existing data
+uv run hkjc-scrape --analyze
 ```
 
 ### Scraping Historical Races
@@ -171,6 +234,34 @@ uv run hkjc-scrape --start-date 2015/01/01 --end-date 2015/12/31 --racecourse ST
 ```
 
 The `data/.discovered_dates.json` cache stores discovered dates for fast re-runs.
+
+### CLI Options
+
+**Scraping Options:**
+- `--date YYYY/MM/DD` - Specific race date to scrape
+- `--latest` - Scrape today's races (auto-discovers dates)
+- `--racecourse ST|HV` - Racecourse filter (default: ST)
+- `--start-date YYYY/MM/DD` - Start date for batch discovery/scraping
+- `--end-date YYYY/MM/DD` - End date for batch discovery/scraping
+- `--discover` - Only discover race dates without scraping
+- `--auto-all` - Discover all historical races (2000-2024)
+- `--refresh-cache` - Re-verify cached dates during discovery
+
+**Database Export:**
+- `--export-sqlite` - Export JSON data to SQLite after scraping
+- `--db-path PATH` - Custom database path (default: data/hkjc_racing.db)
+
+**Analytics:**
+- `--analyze` - Run analytics on existing data
+- `--analyze-format text|json` - Output format for analytics (default: text)
+
+**Rate Limiting:**
+- `--rate-limit N` - Max requests per second (default: no limit)
+- `--rate-jitter N` - Random jitter factor 0.0-1.0 (default: 0.2)
+
+**Output:**
+- `--output DIR` - Output directory for JSON files (default: data)
+- `--format json|csv` - Output format (for CSV export feature)
 
 ## Data Model
 
