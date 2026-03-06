@@ -11,6 +11,8 @@ from hkjc_scraper.data_parsers import (
     generate_race_id,
     parse_sectional_time_cell,
 )
+from hkjc_scraper.cache import DiscoveryCache
+from hkjc_scraper.utils import generate_date_range, parse_race_date
 
 from hkjc_scraper.horse_parsers import (
     parse_horse_profile as parse_horse_profile_data,
@@ -548,3 +550,110 @@ class HKJCRacingSpider(Spider):
                 self.stats = stats
 
         return Result(items, stats)
+
+    async def discover_dates(
+        self,
+        start_date: str,
+        end_date: str,
+        refresh_cache: bool = False,
+    ) -> list[dict]:
+        """Discover valid race dates in the given range.
+
+        Args:
+            start_date: Start date in YYYY/MM/DD format
+            end_date: End date in YYYY/MM/DD format
+            refresh_cache: If True, re-verify cached dates
+
+        Returns:
+            List of dicts with keys: date, racecourse, race_count
+        """
+        cache = DiscoveryCache()
+        cache.load()
+
+        discovered = []
+        racecourses = ["ST", "HV"]
+        check_count = 0
+        save_interval = 50
+
+        async def check_date(date: str, racecourse: str) -> dict | None:
+            """Check if a date + racecourse has valid races."""
+            # Check cache first unless refreshing
+            if not refresh_cache and cache.is_cached(date, racecourse):
+                return None
+
+            # Skip August (season break)
+            if cache.is_season_break(date):
+                cache.mark_season_break(date[:7])  # YYYY-MM format
+                return None
+
+            url = f"{self.BASE_URL}?racedate={date}&Racecourse={racecourse}"
+            try:
+                response = await self.fetch(url)
+
+                if response and self._is_valid_race_page(response):
+                    race_count = self._count_races(response)
+                    cache.add_discovery(date, racecourse, race_count)
+
+                    return {
+                        "date": date,
+                        "racecourse": racecourse,
+                        "race_count": race_count
+                    }
+            except Exception as e:
+                self.logger.warning(f"Error checking {date} {racecourse}: {e}")
+
+            return None
+
+        # Check each date + racecourse combination
+        for date in generate_date_range(start_date, end_date):
+            for racecourse in racecourses:
+                result = await check_date(date, racecourse)
+                if result:
+                    discovered.append(result)
+
+                # Periodic cache save
+                check_count += 1
+                if check_count % save_interval == 0:
+                    cache.save()
+
+        cache.save()
+        return discovered
+
+    def _is_valid_race_page(self, response) -> bool:
+        """Check if response contains valid race data.
+
+        Args:
+            response: The HTTP response object
+
+        Returns:
+            True if page has valid race data, False otherwise
+        """
+        # Stub implementation - will be completed in Task 4
+        # A valid race page should have race results table
+        page_text = response.get_all_text()
+        return "賽事結果" in page_text or "localresults" in response.url
+
+    def _count_races(self, response) -> int:
+        """Count the number of races on a race day page.
+
+        Args:
+            response: The HTTP response object
+
+        Returns:
+            Number of races found
+        """
+        # Stub implementation - will be completed in Task 4
+        # Count race number links or dropdown options
+        race_links = response.css('a[href*="RaceNo="]')
+        if race_links:
+            race_nos = set()
+            for link in race_links:
+                href = link.attrib.get("href", "")
+                if "RaceNo=" in href:
+                    try:
+                        race_no = href.split("RaceNo=")[1].split("&")[0]
+                        race_nos.add(race_no)
+                    except (IndexError, ValueError):
+                        pass
+            return len(race_nos) if race_nos else 0
+        return 0
