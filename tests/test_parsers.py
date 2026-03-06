@@ -28,6 +28,33 @@ class TestCleanPosition:
     def test_clean_position_with_slash(self):
         assert clean_position("1/2") == "12"
 
+    def test_clean_position_special_codes(self):
+        """Test that special position status codes are preserved."""
+        assert clean_position("DISQ") == "DISQ"
+        assert clean_position("DNF") == "DNF"
+        assert clean_position("FE") == "FE"
+        assert clean_position("ML") == "ML"
+        assert clean_position("PU") == "PU"
+        assert clean_position("TNP") == "TNP"
+        assert clean_position("TO") == "TO"
+        assert clean_position("UR") == "UR"
+        assert clean_position("VOID") == "VOID"
+        assert clean_position("WR") == "WR"
+        assert clean_position("WV") == "WV"
+        assert clean_position("WV-A") == "WV-A"
+        assert clean_position("WX") == "WX"
+        assert clean_position("WX-A") == "WX-A"
+        assert clean_position("WXNR") == "WXNR"
+
+    def test_clean_position_special_codes_lowercase(self):
+        """Test that special codes are case-insensitive."""
+        assert clean_position("disq") == "DISQ"
+        assert clean_position("Dnf") == "DNF"
+        assert clean_position("pu ") == "PU"
+
+    def test_clean_position_none(self):
+        assert clean_position(None) == ""
+
 
 class TestParseRating:
     """Test rating parsing."""

@@ -8,6 +8,26 @@ and sectional times.
 import re
 from typing import Any
 
+# Special race position status codes from HKJC special race index
+# https://racing.hkjc.com/zh-hk/local/page/special-race-index
+_SPECIAL_POSITION_CODES = {
+    "DISQ",  # 取消資格 / Disqualified
+    "DNF",   # 未有跑畢全程 / Did Not Finish
+    "FE",    # 馬匹在賽事中跌倒 / Fell
+    "ML",    # 多個馬位 / Multiple Lengths
+    "PU",    # 拉停 / Pulled Up
+    "TNP",   # 并無參賽競逐 / Took No Part
+    "TO",    # 遙遙落後 / Tailged Off
+    "UR",    # 騎師墮馬 / Unseated Rider
+    "VOID",  # 賽事無效 / Void Race
+    "WR",    # 司閘員著令退出 / Withdrawn by Starter
+    "WV",    # 因健康理由宣佈退出 / Withdrawn Veterinary
+    "WV-A",  # 因健康理由於騎師過磅后宣佈退出 / Withdrawn Veterinary After Weigh-in
+    "WX",    # 競賽董事小組著令退出 / Withdrawn Stewards
+    "WX-A",  # 於騎師過磅後被競賽董事小組著令退出 / Withdrawn Stewards After Weigh-in
+    "WXNR",  # 競賽董事小組著令退出，視作無出賽馬匹 / Withdrawn Stewards No Runner
+}
+
 # Chinese numeral mapping for positions
 _CHINESE_NUMERALS = {
     "一": "1",
@@ -25,13 +45,13 @@ _CHINESE_NUMERALS = {
 
 
 def clean_position(text: str | None) -> str:
-    """Clean position text by extracting digits.
+    """Clean position text by extracting digits or preserving special status codes.
 
     Args:
-        text: Raw position text (e.g., "1", "1 ", "第一名", "1/2") or None
+        text: Raw position text (e.g., "1", "1 ", "第一名", "DISQ", "DNF") or None
 
     Returns:
-        Cleaned position string containing only digits, or empty string if none found.
+        Cleaned position string containing digits, special status code, or empty string.
 
     Examples:
         >>> clean_position("1")
@@ -40,6 +60,12 @@ def clean_position(text: str | None) -> str:
         "1"
         >>> clean_position("1/2")
         "12"
+        >>> clean_position("DISQ")
+        "DISQ"
+        >>> clean_position("DNF")
+        "DNF"
+        >>> clean_position("PU")
+        "PU"
         >>> clean_position("")
         ""
         >>> clean_position(None)
@@ -48,7 +74,13 @@ def clean_position(text: str | None) -> str:
     if not text:
         return ""
 
-    # First check for Chinese numerals (like "第一名", "第二名", etc.)
+    text = text.strip().upper()
+
+    # First check for special position status codes
+    if text in _SPECIAL_POSITION_CODES:
+        return text
+
+    # Check for Chinese numerals (like "第一名", "第二名", etc.)
     for chinese, digit in _CHINESE_NUMERALS.items():
         if chinese in text:
             return digit
