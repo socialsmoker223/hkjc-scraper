@@ -132,8 +132,8 @@ def calculate_jockey_performance(
         race_id = perf.get("race_id", "")
         if race_id:
             parts = race_id.split("-")
-            if len(parts) >= 3:
-                jockey_data[jockey_id]["tracks"].append(parts[2])
+            if len(parts) >= 4:
+                jockey_data[jockey_id]["tracks"].append(parts[3])
 
         # Draw data
         draw = perf.get("draw")
@@ -285,8 +285,8 @@ def calculate_trainer_performance(
         race_id = perf.get("race_id", "")
         if race_id:
             parts = race_id.split("-")
-            if len(parts) >= 3:
-                trainer_data[trainer_id]["tracks"].append(parts[2])
+            if len(parts) >= 4:
+                trainer_data[trainer_id]["tracks"].append(parts[3])
 
     # Calculate statistics
     result: dict[str, dict] = {}
@@ -458,10 +458,10 @@ def calculate_draw_bias(
             if is_win:
                 distance_draws[dist_cat][draw]["wins"] += 1
         elif race_id:
-            # Extract track from race_id format
+            # Extract track from race_id format (YYYY-MM-DD-CC-N)
             parts = race_id.split("-")
-            if len(parts) >= 3:
-                course = parts[2]
+            if len(parts) >= 4:
+                course = parts[3]
                 track_draws[course][draw]["runs"] += 1
                 if is_win:
                     track_draws[course][draw]["wins"] += 1
@@ -1059,8 +1059,8 @@ def calculate_horse_form(
             position = perf.get("position", "")
             parts = race_id.split("-")
 
-            if len(parts) >= 3:
-                track = parts[2]
+            if len(parts) >= 4:
+                track = parts[3]
                 if _is_valid_finish(position):
                     track_runs[track] += 1
                     if position == "1":

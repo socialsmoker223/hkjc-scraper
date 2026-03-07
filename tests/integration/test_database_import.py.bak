@@ -1,0 +1,1056 @@
+"""Integration tests for SQLite database export functionality.
+
+These tests verify:
+- Database creation with correct schema
+- Foreign key constraints
+- Data import from JSON files
+- Index creation
+- Edge cases (empty data, duplicates, NULL foreign keys)
+"""
+
+import json
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+# Import from main repo source
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
+
+from hkjc_scraper.database import (
+    _insert_dividend,
+    _insert_horse,
+    _insert_incident,
+    _insert_jockey,
+    _insert_performance,
+    _insert_race,
+    _insert_sectional_time,
+    _insert_trainer,
+    create_database,
+    export_json_to_db,
+)
+
+
+@pytest.fixture
+def temp_db_path(tmp_path: Path) -> Path:
+    """Create a temporary database path.
+
+    Args:
+        tmp_path: Pytest temporary path fixture
+
+    Returns:
+        Path to temporary database file
+    """
+    return tmp_path / "test_hkjc.db"
+
+
+@pytest.fixture
+def temp_json_dir(tmp_path: Path) -> Path:
+    """Create a temporary directory for JSON test data.
+
+    Args:
+        tmp_path: Pytest temporary path fixture
+
+    Returns:
+        Path to temporary JSON directory
+    """
+    json_dir = tmp_path / "json_data"
+    json_dir.mkdir()
+    return json_dir
+
+
+@pytest.fixture
+def sample_races_data() -> list[dict]:
+    """Sample race data for testing.
+
+    Returns:
+        List of race dictionaries
+    """
+    return [
+        {
+            "race_id": "2026-03-01-ST-1",
+            "race_date": "2026/03/01",
+            "race_no": 1,
+            "racecourse": "沙田",
+            "class": "第四班",
+            "distance": 1200,
+            "rating": {"high": 60, "low": 40},
+            "going": "好地",
+            "surface": "草地",
+            "track": "草地 - \"A\"跑道",
+            "sectional_times": ["24.58", "47.89", "1:10.23", "1:22.45"],
+            "prize_money": 1170000,
+            "race_name": "讓賽",
+        },
+        {
+            "race_id": "2026-03-01-ST-2",
+            "race_date": "2026/03/01",
+            "race_no": 2,
+            "racecourse": "沙田",
+            "class": "第三班",
+            "distance": 1600,
+            "rating": {"high": 80, "low": 60},
+            "going": "好地",
+            "surface": "草地",
+            "track": "草地 - \"A\"跑道",
+            "sectional_times": ["25.12", "48.76", "1:12.34", "1:24.56"],
+            "prize_money": 1350000,
+        },
+    ]
+
+
+@pytest.fixture
+def sample_performance_data() -> list[dict]:
+    """Sample performance data for testing.
+
+    Returns:
+        List of performance dictionaries
+    """
+    return [
+        {
+            "race_id": "2026-03-01-ST-1",
+            "position": "1",
+            "horse_no": "1",
+            "horse_id": "H001",
+            "horse_name": "測試馬一",
+            "jockey": "騎師一",
+            "jockey_id": "J001",
+            "trainer": "練馬師一",
+            "trainer_id": "T001",
+            "actual_weight": "123",
+            "body_weight": "1020",
+            "draw": "1",
+            "margin": "馬頭",
+            "running_position": ["1", "1", "1", "1"],
+            "finish_time": "1:10.23",
+            "win_odds": "2.5",
+        },
+        {
+            "race_id": "2026-03-01-ST-1",
+            "position": "2",
+            "horse_no": "2",
+            "horse_id": "H002",
+            "horse_name": "測試馬二",
+            "jockey": "騎師二",
+            "jockey_id": "J002",
+            "trainer": "練馬師二",
+            "trainer_id": "T002",
+            "actual_weight": "125",
+            "body_weight": "1015",
+            "draw": "2",
+            "margin": "馬頸",
+            "running_position": ["2", "2", "2", "2"],
+            "finish_time": "1:10.28",
+            "win_odds": "3.2",
+        },
+        {
+            # Record with NULL foreign keys (edge case)
+            "race_id": "2026-03-01-ST-1",
+            "position": "DNF",
+            "horse_no": "3",
+            "horse_id": None,
+            "horse_name": "測試馬三",
+            "jockey": "騎師三",
+            "jockey_id": None,
+            "trainer": "練馬師三",
+            "trainer_id": None,
+            "actual_weight": "120",
+            "body_weight": "1025",
+            "draw": "3",
+            "margin": "",
+            "running_position": ["3", "3", "3", "DNF"],
+            "finish_time": "",
+            "win_odds": "15.0",
+        },
+    ]
+
+
+@pytest.fixture
+def sample_dividends_data() -> list[dict]:
+    """Sample dividends data for testing.
+
+    Returns:
+        List of dividend dictionaries
+    """
+    return [
+        {
+            "race_id": "2026-03-01-ST-1",
+            "pool": "獨贏",
+            "winning_combination": "1",
+            "payout": "12.5",
+        },
+        {
+            "race_id": "2026-03-01-ST-1",
+            "pool": "位置",
+            "winning_combination": "1,2,3",
+            "payout": "4.2, 3.8, 2.5",
+        },
+    ]
+
+
+@pytest.fixture
+def sample_incidents_data() -> list[dict]:
+    """Sample incidents data for testing.
+
+    Returns:
+        List of incident dictionaries
+    """
+    return [
+        {
+            "race_id": "2026-03-01-ST-1",
+            "position": "3",
+            "horse_no": "3",
+            "horse_name": "測試馬三",
+            "incident_report": "未有跑畢全程",
+        },
+    ]
+
+
+@pytest.fixture
+def sample_horses_data() -> list[dict]:
+    """Sample horse profiles for testing.
+
+    Returns:
+        List of horse dictionaries
+    """
+    return [
+        {
+            "horse_id": "H001",
+            "name": "測試馬一",
+            "country_of_birth": "紐西蘭",
+            "age": "4",
+            "colour": "棗色",
+            "gender": "閹馬",
+            "sire": "Sire Name",
+            "dam": "Dam Name",
+            "damsire": "Damsire Name",
+            "trainer": "練馬師一",
+            "owner": "馬主一",
+            "current_rating": 85,
+            "initial_rating": 75,
+            "season_prize": 500000,
+            "total_prize": 2500000,
+            "wins": 5,
+            "places": 3,
+            "shows": 2,
+            "total": 15,
+            "location": "自購馬",
+            "import_type": "",
+            "import_date": "",
+        },
+        {
+            "horse_id": "H002",
+            "name": "測試馬二",
+            "country_of_birth": "澳洲",
+            "age": "5",
+            "colour": "棕色",
+            "gender": "馬",
+            "sire": "Another Sire",
+            "dam": "Another Dam",
+            "damsire": "Another Damsire",
+            "trainer": "練馬師二",
+            "owner": "馬主二",
+            "current_rating": 92,
+            "initial_rating": 80,
+            "season_prize": 800000,
+            "total_prize": 4500000,
+            "wins": 8,
+            "places": 4,
+            "shows": 2,
+            "total": 20,
+        },
+    ]
+
+
+@pytest.fixture
+def sample_jockeys_data() -> list[dict]:
+    """Sample jockey profiles for testing.
+
+    Returns:
+        List of jockey dictionaries
+    """
+    return [
+        {
+            "jockey_id": "J001",
+            "name": "騎師一",
+            "age": "28",
+            "background": "背景資料",
+            "achievements": "成就資料",
+            "career_wins": 350,
+            "career_win_rate": "15%",
+            "season_stats": {
+                "wins": 45,
+                "places": 30,
+                "win_rate": "18%",
+                "prize_money": 25000000,
+            },
+        },
+        {
+            "jockey_id": "J002",
+            "name": "騎師二",
+            "age": "32",
+            "background": "",
+            "achievements": "",
+            "career_wins": 520,
+            "career_win_rate": "17%",
+            "season_stats": {
+                "wins": 60,
+                "places": 40,
+                "win_rate": "20%",
+                "prize_money": 35000000,
+            },
+        },
+    ]
+
+
+@pytest.fixture
+def sample_trainers_data() -> list[dict]:
+    """Sample trainer profiles for testing.
+
+    Returns:
+        List of trainer dictionaries
+    """
+    return [
+        {
+            "trainer_id": "T001",
+            "name": "練馬師一",
+            "age": "45",
+            "background": "練馬師背景",
+            "achievements": "練馬師成就",
+            "career_wins": 800,
+            "career_win_rate": "12%",
+            "season_stats": {
+                "wins": 75,
+                "places": 60,
+                "shows": 45,
+                "fourth": 30,
+                "total_runners": 500,
+                "win_rate": "15%",
+                "prize_money": 45000000,
+            },
+        },
+    ]
+
+
+@pytest.fixture
+def sample_sectional_times_data() -> list[dict]:
+    """Sample sectional times data for testing.
+
+    Returns:
+        List of sectional time dictionaries
+    """
+    return [
+        {
+            "race_id": "2026-03-01-ST-1",
+            "horse_no": "1",
+            "section_number": 1,
+            "position": 1,
+            "margin": "",
+            "time": 24.58,
+        },
+        {
+            "race_id": "2026-03-01-ST-1",
+            "horse_no": "1",
+            "section_number": 2,
+            "position": 1,
+            "margin": "馬頭",
+            "time": 23.31,
+        },
+    ]
+
+
+@pytest.mark.integration
+class TestDatabaseCreation:
+    """Test database schema creation and structure."""
+
+    def test_creates_all_tables(self, temp_db_path: Path) -> None:
+        """Verify all 8 tables are created with correct schema."""
+        conn = create_database(temp_db_path)
+        cursor = conn.cursor()
+
+        # Get all table names
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+        tables = {row[0] for row in cursor.fetchall()}
+
+        expected_tables = {
+            "races",
+            "performance",
+            "dividends",
+            "incidents",
+            "horses",
+            "jockeys",
+            "trainers",
+            "sectional_times",
+        }
+        assert tables == expected_tables, f"Missing tables: {expected_tables - tables}"
+
+        conn.close()
+
+    def test_races_table_schema(self, temp_db_path: Path) -> None:
+        """Verify races table has correct columns and types."""
+        conn = create_database(temp_db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(races)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+        expected_columns = {
+            "race_id": "TEXT",
+            "race_date": "TEXT",
+            "race_no": "INTEGER",
+            "racecourse": "TEXT",
+            "class": "TEXT",
+            "distance": "INTEGER",
+            "rating_high": "INTEGER",
+            "rating_low": "INTEGER",
+            "going": "TEXT",
+            "surface": "TEXT",
+            "track": "TEXT",
+            "prize_money": "INTEGER",
+            "race_name": "TEXT",
+        }
+
+        for col, expected_type in expected_columns.items():
+            assert col in columns, f"Missing column: {col}"
+            assert columns[col] == expected_type, f"Column {col} has wrong type: {columns[col]}"
+
+        conn.close()
+
+    def test_performance_table_schema(self, temp_db_path: Path) -> None:
+        """Verify performance table has correct columns and types."""
+        conn = create_database(temp_db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(performance)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+        expected_columns = {
+            "id": "INTEGER",
+            "race_id": "TEXT",
+            "position": "TEXT",
+            "horse_no": "TEXT",
+            "horse_id": "TEXT",
+            "horse_name": "TEXT",
+            "jockey": "TEXT",
+            "jockey_id": "TEXT",
+            "trainer": "TEXT",
+            "trainer_id": "TEXT",
+            "actual_weight": "TEXT",
+            "body_weight": "TEXT",
+            "draw": "TEXT",
+            "margin": "TEXT",
+            "finish_time": "TEXT",
+            "win_odds": "TEXT",
+        }
+
+        for col, expected_type in expected_columns.items():
+            assert col in columns, f"Missing column: {col}"
+            assert columns[col] == expected_type, f"Column {col} has wrong type: {columns[col]}"
+
+        conn.close()
+
+    def test_foreign_keys_enabled(self, temp_db_path: Path) -> None:
+        """Verify foreign key constraints are enabled."""
+        conn = create_database(temp_db_path)
+        cursor = conn.cursor()
+
+        # Check if foreign keys are enabled
+        cursor.execute("PRAGMA foreign_keys")
+        fk_enabled = cursor.fetchone()[0]
+        assert fk_enabled == 1, "Foreign keys should be enabled"
+
+        conn.close()
+
+    def test_indexes_created(self, temp_db_path: Path) -> None:
+        """Verify all expected indexes are created."""
+        conn = create_database(temp_db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
+        indexes = {row[0] for row in cursor.fetchall()}
+
+        expected_indexes = {
+            "idx_races_date",
+            "idx_races_racecourse",
+            "idx_performance_race_id",
+            "idx_performance_horse_id",
+            "idx_performance_jockey_id",
+            "idx_performance_trainer_id",
+            "idx_dividends_race_id",
+            "idx_incidents_race_id",
+            "idx_sectional_times_race_id",
+        }
+
+        assert expected_indexes.issubset(
+            indexes
+        ), f"Missing indexes: {expected_indexes - indexes}"
+
+        conn.close()
+
+
+@pytest.mark.integration
+class TestInsertFunctions:
+    """Test individual insert functions."""
+
+    def test_insert_race(self, temp_db_path: Path, sample_races_data: list[dict]) -> None:
+        """Test race record insertion."""
+        conn = create_database(temp_db_path)
+        _insert_race(conn, sample_races_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM races WHERE race_id = ?", ("2026-03-01-ST-1",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[0] == "2026-03-01-ST-1"  # race_id
+        assert row[1] == "2026/03/01"  # race_date
+        assert row[2] == 1  # race_no
+        assert row[3] == "沙田"  # racecourse
+        assert row[6] == 60  # rating_high
+        assert row[7] == 40  # rating_low
+
+        conn.close()
+
+    def test_insert_performance(self, temp_db_path: Path, sample_performance_data: list[dict]) -> None:
+        """Test performance record insertion."""
+        conn = create_database(temp_db_path)
+
+        # First insert the race to satisfy FK constraint
+        _insert_race(
+            conn,
+            {
+                "race_id": "2026-03-01-ST-1",
+                "race_date": "2026/03/01",
+                "race_no": 1,
+                "racecourse": "沙田",
+                "rating": {},
+            },
+        )
+        _insert_performance(conn, sample_performance_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM performance WHERE horse_id = ?", ("H001",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[2] == "1"  # position
+        assert row[4] == "H001"  # horse_id
+        assert row[5] == "測試馬一"  # horse_name
+
+        conn.close()
+
+    def test_insert_dividend(self, temp_db_path: Path, sample_dividends_data: list[dict]) -> None:
+        """Test dividend record insertion."""
+        conn = create_database(temp_db_path)
+
+        # Insert race first
+        _insert_race(
+            conn,
+            {
+                "race_id": "2026-03-01-ST-1",
+                "race_date": "2026/03/01",
+                "race_no": 1,
+                "racecourse": "沙田",
+                "rating": {},
+            },
+        )
+        _insert_dividend(conn, sample_dividends_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM dividends WHERE pool = ?", ("獨贏",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[2] == "獨贏"  # pool
+        assert row[3] == "1"  # winning_combination
+
+        conn.close()
+
+    def test_insert_horse(self, temp_db_path: Path, sample_horses_data: list[dict]) -> None:
+        """Test horse profile insertion."""
+        conn = create_database(temp_db_path)
+        _insert_horse(conn, sample_horses_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM horses WHERE horse_id = ?", ("H001",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[1] == "測試馬一"  # name
+        assert row[2] == "紐西蘭"  # country_of_birth
+        assert row[12] == 5  # wins
+        assert row[13] == 3  # places
+
+        conn.close()
+
+    def test_insert_jockey(self, temp_db_path: Path, sample_jockeys_data: list[dict]) -> None:
+        """Test jockey profile insertion."""
+        conn = create_database(temp_db_path)
+        _insert_jockey(conn, sample_jockeys_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM jockeys WHERE jockey_id = ?", ("J001",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[1] == "騎師一"  # name
+        assert row[5] == 350  # career_wins
+        # season_stats should be stored as JSON string
+        import json
+        season_stats = json.loads(row[7])
+        assert season_stats["wins"] == 45
+
+        conn.close()
+
+    def test_insert_trainer(self, temp_db_path: Path, sample_trainers_data: list[dict]) -> None:
+        """Test trainer profile insertion."""
+        conn = create_database(temp_db_path)
+        _insert_trainer(conn, sample_trainers_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trainers WHERE trainer_id = ?", ("T001",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[1] == "練馬師一"  # name
+        assert row[5] == 800  # career_wins
+
+        conn.close()
+
+    def test_insert_sectional_time(
+        self, temp_db_path: Path, sample_sectional_times_data: list[dict]
+    ) -> None:
+        """Test sectional time insertion."""
+        conn = create_database(temp_db_path)
+
+        # Insert race first
+        _insert_race(
+            conn,
+            {
+                "race_id": "2026-03-01-ST-1",
+                "race_date": "2026/03/01",
+                "race_no": 1,
+                "racecourse": "沙田",
+                "rating": {},
+            },
+        )
+        _insert_sectional_time(conn, sample_sectional_times_data[0])
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sectional_times WHERE section_number = 1")
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[3] == "1"  # horse_no
+        assert row[4] == 1  # section_number
+        assert row[7] == 24.58  # time
+
+        conn.close()
+
+
+@pytest.mark.integration
+class TestForeignKeysConstraints:
+    """Test foreign key constraint enforcement."""
+
+    def test_performance_requires_valid_race_id(self, temp_db_path: Path) -> None:
+        """Test that performance record requires valid race_id."""
+        conn = create_database(temp_db_path)
+
+        # Try to insert performance without race
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_performance(
+                conn,
+                {
+                    "race_id": "nonexistent-race",
+                    "position": "1",
+                    "horse_no": "1",
+                },
+            )
+            conn.commit()
+
+        conn.close()
+
+    def test_dividend_requires_valid_race_id(self, temp_db_path: Path) -> None:
+        """Test that dividend record requires valid race_id."""
+        conn = create_database(temp_db_path)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_dividend(
+                conn,
+                {
+                    "race_id": "nonexistent-race",
+                    "pool": "獨贏",
+                    "winning_combination": "1",
+                },
+            )
+            conn.commit()
+
+        conn.close()
+
+    def test_incident_requires_valid_race_id(self, temp_db_path: Path) -> None:
+        """Test that incident record requires valid race_id."""
+        conn = create_database(temp_db_path)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_incident(
+                conn,
+                {
+                    "race_id": "nonexistent-race",
+                    "position": "1",
+                    "horse_no": "1",
+                },
+            )
+            conn.commit()
+
+        conn.close()
+
+    def test_sectional_time_requires_valid_race_id(self, temp_db_path: Path) -> None:
+        """Test that sectional_time record requires valid race_id."""
+        conn = create_database(temp_db_path)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_sectional_time(
+                conn,
+                {
+                    "race_id": "nonexistent-race",
+                    "horse_no": "1",
+                    "section_number": 1,
+                },
+            )
+            conn.commit()
+
+        conn.close()
+
+    def test_cascade_delete_on_race_removal(self, temp_db_path: Path) -> None:
+        """Test that deleting a race cascades to related records."""
+        conn = create_database(temp_db_path)
+
+        # Insert race and related records
+        race_data = {
+            "race_id": "2026-03-01-ST-1",
+            "race_date": "2026/03/01",
+            "race_no": 1,
+            "racecourse": "沙田",
+            "rating": {},
+        }
+        _insert_race(conn, race_data)
+        _insert_performance(
+            conn,
+            {
+                "race_id": "2026-03-01-ST-1",
+                "position": "1",
+                "horse_no": "1",
+            },
+        )
+        _insert_dividend(
+            conn,
+            {
+                "race_id": "2026-03-01-ST-1",
+                "pool": "獨贏",
+                "winning_combination": "1",
+            },
+        )
+        conn.commit()
+
+        # Delete race
+        conn.execute("DELETE FROM races WHERE race_id = ?", ("2026-03-01-ST-1",))
+        conn.commit()
+
+        # Verify related records are deleted
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM performance WHERE race_id = ?", ("2026-03-01-ST-1",))
+        assert cursor.fetchone()[0] == 0
+
+        cursor.execute("SELECT COUNT(*) FROM dividends WHERE race_id = ?", ("2026-03-01-ST-1",))
+        assert cursor.fetchone()[0] == 0
+
+        conn.close()
+
+
+@pytest.mark.integration
+class TestJSONImport:
+    """Test JSON file import functionality."""
+
+    def test_export_json_to_db_creates_tables(
+        self, temp_json_dir: Path, temp_db_path: Path
+    ) -> None:
+        """Test that export_json_to_db creates all required tables."""
+        counts = export_json_to_db(temp_json_dir, temp_db_path)
+
+        # Verify database exists and has tables
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+        tables = {row[0] for row in cursor.fetchall()}
+        conn.close()
+
+        expected_tables = {
+            "races",
+            "performance",
+            "dividends",
+            "incidents",
+            "horses",
+            "jockeys",
+            "trainers",
+            "sectional_times",
+        }
+        assert tables == expected_tables
+
+    def test_export_json_to_db_imports_all_tables(
+        self,
+        temp_json_dir: Path,
+        temp_db_path: Path,
+        sample_races_data: list[dict],
+        sample_performance_data: list[dict],
+        sample_horses_data: list[dict],
+        sample_jockeys_data: list[dict],
+    ) -> None:
+        """Test that export_json_to_db imports data from all JSON files."""
+        # Write JSON files
+        (temp_json_dir / "races_2026-03-01.json").write_text(
+            json.dumps(sample_races_data, ensure_ascii=False)
+        )
+        (temp_json_dir / "performance_2026-03-01.json").write_text(
+            json.dumps(sample_performance_data, ensure_ascii=False)
+        )
+        (temp_json_dir / "horses_2026-03-01.json").write_text(
+            json.dumps(sample_horses_data, ensure_ascii=False)
+        )
+        (temp_json_dir / "jockeys_2026-03-01.json").write_text(
+            json.dumps(sample_jockeys_data, ensure_ascii=False)
+        )
+
+        counts = export_json_to_db(temp_json_dir, temp_db_path)
+
+        # Verify counts
+        assert counts["races"] == 2
+        assert counts["performance"] == 3
+        assert counts["horses"] == 2
+        assert counts["jockeys"] == 2
+
+        # Verify data in database
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM races")
+        assert cursor.fetchone()[0] == 2
+
+        cursor.execute("SELECT COUNT(*) FROM performance")
+        assert cursor.fetchone()[0] == 3
+
+        conn.close()
+
+    def test_export_json_to_db_handles_duplicate_race_ids(
+        self,
+        temp_json_dir: Path,
+        temp_db_path: Path,
+        sample_races_data: list[dict],
+    ) -> None:
+        """Test that duplicate race_ids are handled with INSERT OR REPLACE."""
+        # Create two files with same race_id
+        (temp_json_dir / "races_2026-03-01.json").write_text(
+            json.dumps([sample_races_data[0]], ensure_ascii=False)
+        )
+        (temp_json_dir / "races_2026-03-02.json").write_text(
+            json.dumps(
+                [
+                    {
+                        **sample_races_data[0],
+                        "prize_money": 999999,  # Different value
+                    }
+                ],
+                ensure_ascii=False,
+            )
+        )
+
+        counts = export_json_to_db(temp_json_dir, temp_db_path)
+
+        # Should only have 1 race record (replaced)
+        assert counts["races"] == 2  # Two inserts processed
+
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT prize_money FROM races WHERE race_id = ?", ("2026-03-01-ST-1",))
+        prize_money = cursor.fetchone()[0]
+
+        # Should have the last inserted value
+        assert prize_money == 999999
+
+        cursor.execute("SELECT COUNT(*) FROM races")
+        assert cursor.fetchone()[0] == 1
+
+        conn.close()
+
+    def test_export_json_to_db_skips_invalid_files(
+        self,
+        temp_json_dir: Path,
+        temp_db_path: Path,
+        sample_races_data: list[dict],
+    ) -> None:
+        """Test that export_json_to_db skips invalid JSON files gracefully."""
+        # Write valid file
+        (temp_json_dir / "races_2026-03-01.json").write_text(
+            json.dumps(sample_races_data, ensure_ascii=False)
+        )
+
+        # Write invalid files
+        (temp_json_dir / "invalid.json").write_text("{not valid json")
+        (temp_json_dir / ".hidden_cache.json").write_text("{}")  # Should be skipped
+        (temp_json_dir / "unknown_table_2026-03-01.json").write_text("[]")
+
+        counts = export_json_to_db(temp_json_dir, temp_db_path)
+
+        # Should only import valid races
+        assert "races" in counts
+        assert counts["races"] == 2
+        assert "unknown_table" not in counts
+
+
+@pytest.mark.integration
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_empty_json_directory(
+        self, temp_json_dir: Path, temp_db_path: Path
+    ) -> None:
+        """Test handling of empty JSON directory."""
+        counts = export_json_to_db(temp_json_dir, temp_db_path)
+
+        assert counts == {}
+
+    def test_empty_json_arrays(
+        self,
+        temp_json_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
+        """Test handling of empty JSON arrays."""
+        (temp_json_dir / "races_2026-03-01.json").write_text("[]")
+        (temp_json_dir / "performance_2026-03-01.json").write_text("[]")
+
+        counts = export_json_to_db(temp_json_dir, temp_db_path)
+
+        # Should have table entries with 0 records
+        assert "races" in counts
+        assert counts["races"] == 0
+        assert counts["performance"] == 0
+
+    def test_null_foreign_keys(
+        self,
+        temp_db_path: Path,
+        sample_races_data: list[dict],
+        sample_performance_data: list[dict],
+    ) -> None:
+        """Test that NULL foreign keys are handled correctly."""
+        conn = create_database(temp_db_path)
+
+        # Insert race
+        _insert_race(conn, sample_races_data[0])
+
+        # Insert performance with NULL horse_id, jockey_id, trainer_id
+        perf_with_nulls = sample_performance_data[2]  # Has NULL foreign keys
+        _insert_performance(conn, perf_with_nulls)
+        conn.commit()
+
+        # Verify record was inserted
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT horse_id, jockey_id, trainer_id FROM performance WHERE horse_no = ?", ("3",)
+        )
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[0] is None  # horse_id
+        assert row[1] is None  # jockey_id
+        assert row[2] is None  # trainer_id
+
+        conn.close()
+
+    def test_missing_optional_fields(
+        self, temp_db_path: Path, sample_races_data: list[dict]
+    ) -> None:
+        """Test that missing optional fields are handled correctly."""
+        conn = create_database(temp_db_path)
+
+        # Insert race with minimal fields
+        minimal_race = {
+            "race_id": "2026-03-01-ST-3",
+            "race_date": "2026/03/01",
+            "race_no": 3,
+            "racecourse": "沙田",
+        }
+        _insert_race(conn, minimal_race)
+        conn.commit()
+
+        # Verify record was inserted with NULLs for optional fields
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM races WHERE race_id = ?", ("2026-03-01-ST-3",))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row[4] is None  # class
+        assert row[5] is None  # distance
+        assert row[12] is None  # prize_money
+
+        conn.close()
+
+    def test_primary_key_uniqueness_enforcement(
+        self, temp_db_path: Path, sample_races_data: list[dict]
+    ) -> None:
+        """Test that primary key uniqueness is enforced."""
+        conn = create_database(temp_db_path)
+
+        # Insert same race twice
+        _insert_race(conn, sample_races_data[0])
+        _insert_race(conn, sample_races_data[0])  # Duplicate
+        conn.commit()
+
+        # Should only have one record (due to INSERT OR REPLACE in some tables,
+        # but races uses PK so second insert would fail or replace)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_id = ?", ("2026-03-01-ST-1",))
+        count = cursor.fetchone()[0]
+
+        assert count == 1
+
+        conn.close()
+
+    def test_special_characters_in_text_fields(
+        self, temp_db_path: Path, sample_races_data: list[dict]
+    ) -> None:
+        """Test that special characters are handled correctly."""
+        conn = create_database(temp_db_path)
+
+        # Insert race with special characters
+        race_with_special_chars = {
+            "race_id": "2026-03-01-ST-99",
+            "race_date": "2026/03/01",
+            "race_no": 99,
+            "racecourse": "沙田",
+            "class": "第四班",
+            "track": '草地 - "A"跑道 (測試\'特殊\\字符)',
+            "going": "好地",
+            "rating": {},
+        }
+        _insert_race(conn, race_with_special_chars)
+        conn.commit()
+
+        # Verify data was stored correctly
+        cursor = conn.cursor()
+        cursor.execute("SELECT track FROM races WHERE race_id = ?", ("2026-03-01-ST-99",))
+        track = cursor.fetchone()[0]
+
+        assert '草地 - "A"跑道' in track
+
+        conn.close()

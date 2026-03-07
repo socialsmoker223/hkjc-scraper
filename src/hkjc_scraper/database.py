@@ -89,7 +89,7 @@ def _create_races_table(conn: sqlite3.Connection) -> None:
             -- Sectional times stored as JSON array of strings
             sectional_times TEXT,
 
-            -- Prize money in cents (to avoid floating point issues)
+            -- Prize money as integer (raw value from JSON, e.g., 1170000 for HK$1,170,000)
             prize_money INTEGER DEFAULT 0,
 
             -- Metadata
