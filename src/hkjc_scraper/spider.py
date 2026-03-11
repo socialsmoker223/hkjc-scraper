@@ -4,7 +4,7 @@ import asyncio
 import random
 import re
 from scrapling.spiders import Spider, Request
-from scrapling.fetchers import Fetcher
+from scrapling.fetchers import Fetcher, FetcherSession
 
 from hkjc_scraper.id_parsers import (
     extract_horse_id,
@@ -30,6 +30,169 @@ from hkjc_scraper.jockey_trainer_parsers import (
     parse_jockey_profile as parse_jockey_profile_data,
     parse_trainer_profile as parse_trainer_profile_data,
 )
+
+
+def _is_valid_race_page(response) -> bool:
+    """Check if response contains valid race data.
+
+    Args:
+        response: Scrapling response object
+
+    Returns:
+        True if page has valid race data, False otherwise
+    """
+    # Check for common indicators of no data
+    # Note: response.text returns an empty TextHandler for Fetcher responses
+    # Use get_all_text() instead to get the actual text content
+    text = str(response.get_all_text())
+
+    # No data indicators
+    no_data_patterns = [
+        "沒有赛事",  # No races (Chinese)
+        "沒有賽事",
+        "No races",
+        "暫沒有賽事",  # No races at the moment
+    ]
+
+    for pattern in no_data_patterns:
+        if pattern in text:
+            return False
+
+    # Check for race number selector or links
+    # Valid pages have race number options or links
+    if response.css("#selectId option"):
+        return True
+
+    if response.css('a[href*="RaceNo="]'):
+        return True
+
+    return False
+
+
+def _count_races(response) -> int:
+    """Count the number of races on the page.
+
+    Args:
+        response: Scrapling response object
+
+    Returns:
+        Number of races (1-11)
+    """
+    # Try to count from dropdown options
+    options = response.css("#selectId option")
+    if options:
+        return len(options)
+
+    # Alternative: count race number links
+    race_links = response.css('a[href*="RaceNo="]')
+    if race_links:
+        # Extract unique race numbers
+        race_numbers = set()
+        for link in race_links:
+            href = link.attrib.get("href", "")
+            # Extract RaceNo=XX from href
+            if "RaceNo=" in href:
+                match = re.search(r'RaceNo=(\d+)', href)
+                if match:
+                    race_numbers.add(int(match.group(1)))
+
+        return len(race_numbers) if race_numbers else 1
+
+    return 1  # Default to at least 1 race
+
+
+def _check_date_with_session(session: FetcherSession, date: str, racecourse: str, cache: DiscoveryCache) -> dict | None:
+    """Check if races exist for a specific date and racecourse using FetcherSession.
+
+    Args:
+        session: FetcherSession instance
+        date: Race date in YYYY/MM/DD format
+        racecourse: Race course code (ST or HV)
+        cache: Discovery cache instance
+
+    Returns:
+        Dictionary with race count if races found, None otherwise
+    """
+    # Skip August (season break)
+    if cache.is_season_break(date):
+        cache.mark_season_break(date[:7])  # YYYY-MM format
+        return None
+
+    # Check cache first
+    if cache.is_cached(date, racecourse):
+        # Return cached entry if available
+        for entry in cache.data["discovered"]:
+            if entry["date"] == date and entry["racecourse"] == racecourse:
+                return entry
+        return None
+
+    url = f"{HKJCRacingSpider.BASE_URL}?racedate={date}&Racecourse={racecourse}"
+
+    # Fetch the page
+    response = session.get(url)
+    if response and _is_valid_race_page(response):
+        count = _count_races(response)
+        cache.add_discovery(date, racecourse, count)
+        return {"date": date, "racecourse": racecourse, "count": count}
+    return None
+
+
+async def discover_dates(
+    start_date: str,
+    end_date: str,
+    racecourses: list[str] | None = None,
+    cache_path: str | None = None,
+) -> list[dict]:
+    """Discover race dates within a range.
+
+    Args:
+        start_date: Start date in YYYY/MM/DD format
+        end_date: End date in YYYY/MM/DD format
+        racecourses: List of racecourse codes (default: ['ST', 'HV'])
+        cache_path: Path to cache file
+
+    Returns:
+        List of dictionaries with discovered race dates
+    """
+    if racecourses is None:
+        racecourses = ['ST', 'HV']
+
+    cache = DiscoveryCache(cache_path)
+    cache.load()
+    discovered = []
+
+    # Pre-build all combinations to process
+    combinations = [
+        (date, racecourse)
+        for date in generate_date_range(start_date, end_date)
+        for racecourse in racecourses
+    ]
+
+    # Process in chunks for parallel execution with crash resilience
+    CHUNK_SIZE = 50
+    async with FetcherSession() as session:
+        for i in range(0, len(combinations), CHUNK_SIZE):
+            chunk = combinations[i:i + CHUNK_SIZE]
+
+            # Process all items in this chunk in parallel
+            tasks = [
+                _check_date_with_session(session, d, rc, cache)
+                for d, rc in chunk
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Collect non-None results and log errors
+            for result in results:
+                if isinstance(result, Exception):
+                    # Log warning but continue processing
+                    print(f"Warning: Discovery check failed: {result}")
+                elif result:
+                    discovered.append(result)
+
+            # Save cache after each chunk (crash resilience)
+            cache.save()
+
+    return discovered
 
 
 class HKJCRacingSpider(Spider):
@@ -586,144 +749,15 @@ class HKJCRacingSpider(Spider):
     ) -> list[dict]:
         """Discover valid race dates in the given range.
 
+        Delegates to the module-level discover_dates function which uses
+        FetcherSession for better performance and error handling.
+
         Args:
             start_date: Start date in YYYY/MM/DD format
             end_date: End date in YYYY/MM/DD format
-            refresh_cache: If True, re-verify cached dates
+            refresh_cache: Ignored (kept for backward compatibility)
 
         Returns:
-            List of dicts with keys: date, racecourse, race_count
+            List of dicts with keys: date, racecourse, count
         """
-        cache = DiscoveryCache()
-        cache.load()
-
-        discovered = []
-        racecourses = ["ST", "HV"]
-
-        async def check_date(date: str, racecourse: str) -> dict | None:
-            """Check if a date + racecourse has valid races."""
-            # Check cache first unless refreshing
-            if not refresh_cache and cache.is_cached(date, racecourse):
-                # Return cached entry if available
-                for entry in cache.data["discovered"]:
-                    if entry["date"] == date and entry["racecourse"] == racecourse:
-                        return entry
-                return None
-
-            # Skip August (season break)
-            if cache.is_season_break(date):
-                cache.mark_season_break(date[:7])  # YYYY-MM format
-                return None
-
-            url = f"{self.BASE_URL}?racedate={date}&Racecourse={racecourse}"
-            try:
-                response = self.fetch(url)
-
-                if response and self._is_valid_race_page(response):
-                    race_count = self._count_races(response)
-                    cache.add_discovery(date, racecourse, race_count)
-
-                    return {
-                        "date": date,
-                        "racecourse": racecourse,
-                        "race_count": race_count
-                    }
-            except Exception as e:
-                self.logger.warning(f"Error checking {date} {racecourse}: {e}")
-
-            return None
-
-        # Build all combinations to process
-        combinations = [
-            (date, racecourse)
-            for date in generate_date_range(start_date, end_date)
-            for racecourse in racecourses
-        ]
-
-        # Process in chunks for parallel execution with crash resilience
-        CHUNK_SIZE = 50
-        for i in range(0, len(combinations), CHUNK_SIZE):
-            chunk = combinations[i:i + CHUNK_SIZE]
-
-            # Process all items in this chunk in parallel
-            chunk_results = await asyncio.gather(
-                *[check_date(date, rc) for date, rc in chunk],
-                return_exceptions=True
-            )
-
-            # Collect non-None results, handling any exceptions
-            for result in chunk_results:
-                if result and not isinstance(result, Exception):
-                    discovered.append(result)
-
-            # Save cache after each chunk (crash resilience)
-            cache.save()
-
-        return discovered
-
-    def _is_valid_race_page(self, response) -> bool:
-        """Check if response contains valid race data.
-
-        Args:
-            response: Scrapling response object
-
-        Returns:
-            True if page has valid race data, False otherwise
-        """
-        # Check for common indicators of no data
-        # Note: response.text returns an empty TextHandler for Fetcher responses
-        # Use get_all_text() instead to get the actual text content
-        text = str(response.get_all_text())
-
-        # No data indicators
-        no_data_patterns = [
-            "沒有赛事",  # No races (Chinese)
-            "沒有賽事",
-            "No races",
-            "暫沒有賽事",  # No races at the moment
-        ]
-
-        for pattern in no_data_patterns:
-            if pattern in text:
-                return False
-
-        # Check for race number selector or links
-        # Valid pages have race number options or links
-        if response.css("#selectId option"):
-            return True
-
-        if response.css('a[href*="RaceNo="]'):
-            return True
-
-        return False
-
-    def _count_races(self, response) -> int:
-        """Count the number of races on the page.
-
-        Args:
-            response: Scrapling response object
-
-        Returns:
-            Number of races (1-11)
-        """
-        # Try to count from dropdown options
-        options = response.css("#selectId option")
-        if options:
-            return len(options)
-
-        # Alternative: count race number links
-        race_links = response.css('a[href*="RaceNo="]')
-        if race_links:
-            # Extract unique race numbers
-            race_numbers = set()
-            for link in race_links:
-                href = link.attrib.get("href", "")
-                # Extract RaceNo=XX from href
-                if "RaceNo=" in href:
-                    match = re.search(r'RaceNo=(\d+)', href)
-                    if match:
-                        race_numbers.add(int(match.group(1)))
-
-            return len(race_numbers) if race_numbers else 1
-
-        return 1  # Default to at least 1 race
+        return await discover_dates(start_date, end_date)
