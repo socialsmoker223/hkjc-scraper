@@ -133,7 +133,7 @@ async def _check_date_with_session(session: FetcherSession, date: str, racecours
     if response and _is_valid_race_page(response):
         count = _count_races(response)
         cache.add_discovery(date, racecourse, count)
-        return {"date": date, "racecourse": racecourse, "count": count}
+        return {"date": date, "racecourse": racecourse, "race_count": count}
     return None
 
 
@@ -758,6 +758,6 @@ class HKJCRacingSpider(Spider):
             refresh_cache: Ignored (kept for backward compatibility)
 
         Returns:
-            List of dicts with keys: date, racecourse, count
+            List of dicts with keys: date, racecourse, race_count
         """
         return await discover_dates(start_date, end_date)
