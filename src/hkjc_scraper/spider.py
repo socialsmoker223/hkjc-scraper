@@ -45,8 +45,6 @@ class HKJCRacingSpider(Spider):
         self,
         dates: list | None = None,
         racecourse: str | None = None,
-        rate_limit: float | None = None,
-        rate_jitter: float = 0.0,
         **kwargs,
     ):
         """Initialize the spider.
@@ -54,28 +52,15 @@ class HKJCRacingSpider(Spider):
         Args:
             dates: List of dates to scrape (YYYY/MM/DD format)
             racecourse: Race course code (ST or HV)
-            rate_limit: Maximum requests per second (None for no limit)
-            rate_jitter: Random jitter factor for request intervals (0.0-1.0)
             **kwargs: Additional keyword arguments passed to Spider base class
         """
         super().__init__(**kwargs)
         self.dates = dates
         self.racecourse = racecourse
-        self._rate_limit = rate_limit
-        self._rate_jitter = max(0.0, min(1.0, rate_jitter))
         # Initialize deduplication sets
         self._seen_horses = set()
         self._seen_jockeys = set()
         self._seen_trainers = set()
-        # Rate limiter using asyncio.Semaphore for simple rate limiting
-        self._limiter = None
-        self._last_request_time = 0
-        self._min_interval = 1.0 / rate_limit if rate_limit and rate_limit > 0 else 0
-
-        if self._rate_limit and self._rate_limit > 0:
-            # Create a semaphore that allows concurrent_requests at a time
-            # but we'll add delays between actual requests
-            self._limiter = asyncio.Semaphore(self.concurrent_requests)
 
     async def _apply_rate_limit(self):
         """Apply rate limiting with optional jitter before a request.
