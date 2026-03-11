@@ -101,7 +101,7 @@ def _count_races(response) -> int:
     return 1  # Default to at least 1 race
 
 
-def _check_date_with_session(session: FetcherSession, date: str, racecourse: str, cache: DiscoveryCache) -> dict | None:
+async def _check_date_with_session(session: FetcherSession, date: str, racecourse: str, cache: DiscoveryCache) -> dict | None:
     """Check if races exist for a specific date and racecourse using FetcherSession.
 
     Args:
@@ -129,7 +129,7 @@ def _check_date_with_session(session: FetcherSession, date: str, racecourse: str
     url = f"{HKJCRacingSpider.BASE_URL}?racedate={date}&Racecourse={racecourse}"
 
     # Fetch the page
-    response = session.get(url)
+    response = await session.get(url)
     if response and _is_valid_race_page(response):
         count = _count_races(response)
         cache.add_discovery(date, racecourse, count)
