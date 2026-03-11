@@ -62,11 +62,10 @@ class HKJCRacingSpider(Spider):
         self._seen_jockeys = set()
         self._seen_trainers = set()
 
-    async def fetch(self, url: str):
-        """Fetch a URL directly and return the response.
+    def fetch(self, url: str):
+        """Fetch a URL directly using Fetcher.
 
-        This is used by discover_dates to make direct HTTP requests
-        without going through the spider's request/response cycle.
+        Used by discover_dates for initial race discovery.
 
         Args:
             url: URL to fetch
@@ -74,14 +73,7 @@ class HKJCRacingSpider(Spider):
         Returns:
             Response object with text and css methods
         """
-        # Run the synchronous fetch in a thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, Fetcher.get, url)
-        if response:
-            # The Fetcher returns a response, but we need to ensure it has
-            # the interface expected by _is_valid_race_page and _count_races
-            return response
-        return None
+        return Fetcher.get(url)
 
     async def start_requests(self):
         if self.dates:
@@ -625,7 +617,7 @@ class HKJCRacingSpider(Spider):
 
             url = f"{self.BASE_URL}?racedate={date}&Racecourse={racecourse}"
             try:
-                response = await self.fetch(url)
+                response = self.fetch(url)
 
                 if response and self._is_valid_race_page(response):
                     race_count = self._count_races(response)
