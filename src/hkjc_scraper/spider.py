@@ -692,19 +692,31 @@ class HKJCRacingSpider(Spider):
 
             return None
 
-        # Check each date + racecourse combination
-        for date in generate_date_range(start_date, end_date):
-            for racecourse in racecourses:
-                result = await check_date(date, racecourse)
+        # Build all combinations to process
+        combinations = [
+            (date, racecourse)
+            for date in generate_date_range(start_date, end_date)
+            for racecourse in racecourses
+        ]
+
+        # Process in chunks for parallel execution with crash resilience
+        CHUNK_SIZE = 50
+        for i in range(0, len(combinations), CHUNK_SIZE):
+            chunk = combinations[i:i + CHUNK_SIZE]
+
+            # Process all items in this chunk in parallel
+            chunk_results = await asyncio.gather(*[
+                check_date(date, rc) for date, rc in chunk
+            ])
+
+            # Collect non-None results
+            for result in chunk_results:
                 if result:
                     discovered.append(result)
 
-                # Periodic cache save
-                check_count += 1
-                if check_count % save_interval == 0:
-                    cache.save()
+            # Save cache after each chunk (crash resilience)
+            cache.save()
 
-        cache.save()
         return discovered
 
     def _is_valid_race_page(self, response) -> bool:
