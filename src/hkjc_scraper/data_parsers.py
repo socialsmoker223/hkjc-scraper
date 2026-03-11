@@ -6,7 +6,7 @@ and sectional times.
 """
 
 import re
-from typing import Any
+from typing import Any, Final
 
 # Special race position status codes from HKJC special race index
 # https://racing.hkjc.com/zh-hk/local/page/special-race-index
@@ -41,6 +41,22 @@ _CHINESE_NUMERALS = {
     "九": "9",
     "十": "10",
     "零": "0",
+}
+
+# Compiled regex patterns for performance
+_DIGITS_ONLY_PATTERN: Final = re.compile(r'[^\d]')
+_RATING_PATTERN: Final = re.compile(r'\((\d+)-(\d+)\)')
+
+# Racecourse mapping for Chinese names to codes
+RACECOURSE_MAP = {
+    "沙田": "ST",  # Sha Tin
+    "谷草": "HV",  # Happy Valley (grass)
+}
+
+# Reverse mapping for codes to Chinese names
+RACECOURSE_NAMES = {
+    "ST": "沙田",
+    "HV": "谷草",
 }
 
 
@@ -86,7 +102,7 @@ def clean_position(text: str | None) -> str:
             return digit
 
     # Extract all digits from the string
-    digits = re.sub(r'[^\d]', '', text)
+    digits = _DIGITS_ONLY_PATTERN.sub('', text)
     return digits
 
 
@@ -112,7 +128,7 @@ def parse_rating(rating_text: str) -> dict[str, int] | None:
     if not rating_text:
         return None
     # Match pattern like (60-40) with parentheses
-    match = re.match(r'\((\d+)-(\d+)\)', rating_text.strip())
+    match = _RATING_PATTERN.match(rating_text.strip())
     if match:
         min_val = int(match.group(1))
         max_val = int(match.group(2))
@@ -142,7 +158,7 @@ def parse_prize(prize_text: str) -> int:
     if not prize_text:
         return 0
     # Remove currency symbols, commas, and whitespace, then extract digits
-    digits = re.sub(r'[^\d]', '', prize_text)
+    digits = _DIGITS_ONLY_PATTERN.sub('', prize_text)
     if digits:
         return int(digits)
     return 0
