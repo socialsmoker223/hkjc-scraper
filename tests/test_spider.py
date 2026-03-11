@@ -21,7 +21,7 @@ class TestSpiderClass:
 
     def test_spider_has_concurrent_requests(self):
         spider = HKJCRacingSpider()
-        assert spider.concurrent_requests == 5
+        assert spider.concurrent_requests == 10
 
 
 class TestRaceMetadataParser:

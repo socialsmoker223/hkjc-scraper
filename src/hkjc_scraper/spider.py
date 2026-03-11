@@ -6,6 +6,11 @@ import re
 from scrapling.spiders import Spider, Request
 from scrapling.fetchers import Fetcher
 
+from hkjc_scraper.id_parsers import (
+    extract_horse_id,
+    extract_jockey_id,
+    extract_trainer_id,
+)
 from hkjc_scraper.data_parsers import (
     clean_position,
     parse_rating,
@@ -13,6 +18,7 @@ from hkjc_scraper.data_parsers import (
     parse_running_position,
     generate_race_id,
     parse_sectional_time_cell,
+    RACECOURSE_NAMES,
 )
 from hkjc_scraper.cache import DiscoveryCache
 from hkjc_scraper.utils import generate_date_range, parse_race_date
@@ -25,19 +31,13 @@ from hkjc_scraper.jockey_trainer_parsers import (
     parse_trainer_profile as parse_trainer_profile_data,
 )
 
-# Racecourse code to full name mapping
-_RACECOURSE_NAMES = {
-    "ST": "沙田",
-    "HV": "谷草",
-}
-
 
 class HKJCRacingSpider(Spider):
     """Spider for crawling HKJC horse racing data using async pattern."""
 
     name = "hkjc_racing"
     BASE_URL = "https://racing.hkjc.com/zh-hk/local/information/localresults"
-    concurrent_requests = 5
+    concurrent_requests = 10
 
     def __init__(
         self,
@@ -243,7 +243,7 @@ class HKJCRacingSpider(Spider):
         race_id = generate_race_id(date, racecourse, race_no)
 
         # Get full racecourse name
-        racecourse_name = _RACECOURSE_NAMES.get(racecourse, racecourse)
+        racecourse_name = RACECOURSE_NAMES.get(racecourse, racecourse)
 
         # Initialize result dict
         race_data = {
@@ -382,22 +382,19 @@ class HKJCRacingSpider(Spider):
                     if horse_link:
                         horse_name = horse_link[0].text.strip()
                         href = horse_link[0].attrib.get("href", "")
-                        if "horseid=" in href:
-                            horse_id = href.split("horseid=")[1].split("&")[0]
+                        horse_id = extract_horse_id(href)
                     jockey_link = cells[3].css("a")
                     jockey = jockey_link[0].text.strip() if jockey_link else ""
                     jockey_id = None
                     if jockey_link:
                         href = jockey_link[0].attrib.get("href", "")
-                        if "jockeyid=" in href:
-                            jockey_id = href.split("jockeyid=")[1].split("&")[0]
+                        jockey_id = extract_jockey_id(href)
                     trainer_link = cells[4].css("a")
                     trainer = trainer_link[0].text.strip() if trainer_link else ""
                     trainer_id = None
                     if trainer_link:
                         href = trainer_link[0].attrib.get("href", "")
-                        if "trainerid=" in href:
-                            trainer_id = href.split("trainerid=")[1].split("&")[0]
+                        trainer_id = extract_trainer_id(href)
                     pos_text = cells[0].text.strip()
                     position = clean_position(pos_text) if pos_text else ""
                     running_pos = parse_running_position(cells[9])
