@@ -703,13 +703,14 @@ class HKJCRacingSpider(Spider):
             chunk = combinations[i:i + CHUNK_SIZE]
 
             # Process all items in this chunk in parallel
-            chunk_results = await asyncio.gather(*[
-                check_date(date, rc) for date, rc in chunk
-            ])
+            chunk_results = await asyncio.gather(
+                *[check_date(date, rc) for date, rc in chunk],
+                return_exceptions=True
+            )
 
-            # Collect non-None results
+            # Collect non-None results, handling any exceptions
             for result in chunk_results:
-                if result:
+                if result and not isinstance(result, Exception):
                     discovered.append(result)
 
             # Save cache after each chunk (crash resilience)
