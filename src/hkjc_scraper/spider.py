@@ -656,8 +656,6 @@ class HKJCRacingSpider(Spider):
 
         discovered = []
         racecourses = ["ST", "HV"]
-        check_count = 0
-        save_interval = 50
 
         async def check_date(date: str, racecourse: str) -> dict | None:
             """Check if a date + racecourse has valid races."""
