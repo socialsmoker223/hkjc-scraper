@@ -88,3 +88,52 @@ def _parse_career_stats_from_elements(elements: list[Any] | None) -> tuple[int, 
                 except (ValueError, IndexError):
                     pass
     return None
+
+
+def extract_cell_value(cell) -> str | None:
+    """Extract text from a table cell, handling nested <a> tags.
+
+    HKJC profile pages often have values inside nested <a> tags.
+    This function tries cell.text first, then falls back to the first link.
+
+    Args:
+        cell: A Scrapling element representing a table cell
+
+    Returns:
+        The extracted text value, or None if empty
+
+    Examples:
+        >>> extract_cell_value(cells[2])  # Returns "紐西蘭 / 4"
+    """
+    value = cell.text.strip()
+    if not value:
+        links = cell.css("a")
+        if links:
+            value = links[0].text.strip()
+    return value or None
+
+
+def parse_age(text: str) -> int | None:
+    """Extract age from text like "45歲" (45 years old).
+
+    Args:
+        text: Text containing age information
+
+    Returns:
+        The extracted age as an integer, or None if not found
+
+    Examples:
+        >>> parse_age("45歲")
+        45
+        >>> parse_age("Age: 30")
+        30
+    """
+    if not text:
+        return None
+    digits = ''.join(c for c in text if c.isdigit())
+    if digits:
+        try:
+            return int(digits)
+        except ValueError:
+            return None
+    return None

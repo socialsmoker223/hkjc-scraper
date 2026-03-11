@@ -37,7 +37,7 @@ class HKJCRacingSpider(Spider):
 
     name = "hkjc_racing"
     BASE_URL = "https://racing.hkjc.com/zh-hk/local/information/localresults"
-    concurrent_requests = 10
+    concurrent_requests = 15
 
     def __init__(
         self,

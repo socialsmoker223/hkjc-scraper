@@ -6,7 +6,7 @@ This module contains functions for parsing horse profile data from HKJC website 
 import re
 from typing import Any
 
-from .common import parse_career_record
+from .common import parse_career_record, extract_cell_value
 
 # Career record pattern: matches "冠-亞-季-總出賽次數*: 1-2-3-4" format
 _CAREER_RECORD_PATTERN = re.compile(
@@ -80,15 +80,8 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
             label = cells[0].text
 
             # Extract value from cells[2]
-            # Some values are inside nested <a> tags, need to extract from those
-            value_cell = cells[2]
-            value = value_cell.text.strip()
-
-            # If cell.text is empty or whitespace, try extracting from nested <a> tag
-            if not value:
-                links = value_cell.css("a")
-                if links:
-                    value = links[0].text.strip()
+            # Some values are inside nested <a> tags
+            value = extract_cell_value(cells[2])
 
             if not label or not value:
                 continue

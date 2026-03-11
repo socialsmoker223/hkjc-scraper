@@ -7,7 +7,12 @@ the common module.
 
 from typing import Any
 
-from .common import _extract_text_after_label, _parse_career_stats_from_elements
+from .common import (
+    _extract_text_after_label,
+    _parse_career_stats_from_elements,
+    extract_cell_value,
+    parse_age,
+)
 
 
 def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dict:
@@ -70,26 +75,14 @@ def parse_jockey_profile(response: Any, jockey_id: str, jockey_name: str) -> dic
             label = cells[0].text
 
             # Extract value from cells[2], handling nested <a> tags
-            value_cell = cells[2]
-            value = value_cell.text.strip()
-
-            # If cell.text is empty or whitespace, try extracting from nested <a> tag
-            if not value:
-                links = value_cell.css("a")
-                if links:
-                    value = links[0].text.strip()
+            value = extract_cell_value(cells[2])
 
             if not label or not value:
                 continue
 
             # Parse age - extract digits from value like "45歲"
             if "年齡" in label:
-                digits = ''.join(c for c in value if c.isdigit())
-                if digits:
-                    try:
-                        result["age"] = int(digits)
-                    except ValueError:
-                        result["age"] = None
+                result["age"] = parse_age(value)
 
             # Parse season stats
             elif "冠" in label and "：" in label:
@@ -185,26 +178,14 @@ def parse_trainer_profile(response: Any, trainer_id: str, trainer_name: str) -> 
             label = cells[0].text
 
             # Extract value from cells[2], handling nested <a> tags
-            value_cell = cells[2]
-            value = value_cell.text.strip()
-
-            # If cell.text is empty or whitespace, try extracting from nested <a> tag
-            if not value:
-                links = value_cell.css("a")
-                if links:
-                    value = links[0].text.strip()
+            value = extract_cell_value(cells[2])
 
             if not label or not value:
                 continue
 
             # Parse age - extract digits from value like "58歲"
             if "年齡" in label:
-                digits = ''.join(c for c in value if c.isdigit())
-                if digits:
-                    try:
-                        result["age"] = int(digits)
-                    except ValueError:
-                        result["age"] = None
+                result["age"] = parse_age(value)
 
             # Parse season stats
             elif "冠" in label and "：" in label:
