@@ -65,8 +65,6 @@ class HKJCRacingSpider(Spider):
         self._seen_horses = set()
         self._seen_jockeys = set()
         self._seen_trainers = set()
-        # Initialize fetcher for direct HTTP requests
-        self._fetcher = Fetcher()
         # Rate limiter using asyncio.Semaphore for simple rate limiting
         self._limiter = None
         self._last_request_time = 0
@@ -125,7 +123,7 @@ class HKJCRacingSpider(Spider):
 
         # Run the synchronous fetch in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, self._fetcher.get, url)
+        response = await loop.run_in_executor(None, Fetcher.get, url)
         if response:
             # The Fetcher returns a response, but we need to ensure it has
             # the interface expected by _is_valid_race_page and _count_races
