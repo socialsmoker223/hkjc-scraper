@@ -255,10 +255,6 @@ The `data/.discovered_dates.json` cache stores discovered dates for fast re-runs
 - `--analyze` - Run analytics on existing data
 - `--analyze-format text|json` - Output format for analytics (default: text)
 
-**Rate Limiting:**
-- `--rate-limit N` - Max requests per second (default: no limit)
-- `--rate-jitter N` - Random jitter factor 0.0-1.0 (default: 0.2)
-
 **Output:**
 - `--output DIR` - Output directory for JSON files (default: data)
 - `--format json|csv` - Output format (for CSV export feature)

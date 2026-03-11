@@ -366,18 +366,6 @@ conn.close()
 | `--end-date DATE` | End date for discovery/scraping |
 | `--auto-all` | Discover all races from 2000-2024 (slow!) |
 | `--refresh-cache` | Re-verify cached dates during discovery |
-| `--rate-limit N` | Max requests per second (e.g., 2.0) |
-| `--rate-jitter N` | Random jitter factor (0.0-1.0, default: 0.2) |
-
-### Rate Limiting
-
-To avoid IP bans, use rate limiting for large scraping jobs:
-
-```bash
-# 2 requests per second with 20% random jitter
-uv run hkjc-scrape --start-date 2020/01/01 --end-date 2020/12/31 \
-    --rate-limit 2.0 --rate-jitter 0.2
-```
 
 ### Exit Codes
 
@@ -526,9 +514,7 @@ Per-horse sectional time data.
 
 1. **Start with discovery** - Before scraping large date ranges, run `--discover` first to see what data is available.
 
-2. **Use rate limiting** - For historical scraping, set `--rate-limit 2.0` to avoid triggering anti-scraping measures.
-
-3. **Check the cache** - Discovery results are cached in `data/.discovered_dates.json`. Delete this file to force fresh discovery.
+2. **Check the cache** - Discovery results are cached in `data/.discovered_dates.json`. Delete this file to force fresh discovery.
 
 4. **Racing seasons** - Remember that HKJC racing seasons run September to July. August typically has no local racing.
 

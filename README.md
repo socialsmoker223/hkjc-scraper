@@ -185,5 +185,5 @@ uv run pytest tests/ -v
 ## Architecture
 - Extends `scrapling.spiders.Spider` for async crawling
 - Auto-discovers race dates from site dropdown
-- Concurrent requests (5 by default) with rate limiting
+- Concurrent requests with built-in `download_delay`
 - Error handling with retry logic
