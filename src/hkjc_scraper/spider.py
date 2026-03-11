@@ -62,37 +62,6 @@ class HKJCRacingSpider(Spider):
         self._seen_jockeys = set()
         self._seen_trainers = set()
 
-    async def _apply_rate_limit(self):
-        """Apply rate limiting with optional jitter before a request.
-
-        This method sleeps if necessary to maintain the configured rate limit.
-        """
-        if not self._rate_limit or self._rate_limit <= 0:
-            return
-
-        # Calculate minimum time between requests
-        interval = self._min_interval
-
-        # Add jitter if configured
-        if self._rate_jitter > 0:
-            # Jitter adds +/- rate_jitter * 100% variance
-            jitter_amount = interval * self._rate_jitter
-            # Random between -jitter_amount and +jitter_amount
-            jitter = random.uniform(-jitter_amount, jitter_amount)
-            interval = max(0, interval + jitter)
-
-        # Calculate time since last request
-        now = asyncio.get_event_loop().time()
-        time_since_last = now - self._last_request_time
-
-        # Sleep if we need to maintain the rate limit
-        if time_since_last < interval:
-            sleep_time = interval - time_since_last
-            await asyncio.sleep(sleep_time)
-
-        # Update last request time
-        self._last_request_time = asyncio.get_event_loop().time()
-
     async def fetch(self, url: str):
         """Fetch a URL directly and return the response.
 
@@ -105,9 +74,6 @@ class HKJCRacingSpider(Spider):
         Returns:
             Response object with text and css methods
         """
-        # Apply rate limiting before each fetch
-        await self._apply_rate_limit()
-
         # Run the synchronous fetch in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, Fetcher.get, url)
