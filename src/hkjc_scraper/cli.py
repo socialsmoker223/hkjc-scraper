@@ -71,8 +71,6 @@ async def crawl_race(
     date: str | None = None,
     racecourse: str = "ST",
     output_dir: str = "data",
-    rate_limit: float | None = None,
-    rate_jitter: float = 0.0,
     export_sqlite: bool = False,
     db_path: str = "data/hkjc_racing.db",
 ) -> dict:
@@ -82,8 +80,6 @@ async def crawl_race(
         date: Race date in YYYY/MM/DD format, or None for latest
         racecourse: Race course code (ST for Sha Tin, HV for Happy Valley)
         output_dir: Directory to save output JSON files
-        rate_limit: Maximum requests per second (None for no limit)
-        rate_jitter: Random jitter factor for request intervals (0.0-1.0)
         export_sqlite: If True, export data to SQLite database after scraping
         db_path: Path to SQLite database file
 
@@ -93,8 +89,6 @@ async def crawl_race(
     spider = HKJCRacingSpider(
         dates=[date] if date else None,
         racecourse=racecourse,
-        rate_limit=rate_limit,
-        rate_jitter=rate_jitter,
     )
     result = await spider.run()
     grouped = group_items_by_table(result.items)
@@ -171,23 +165,6 @@ async def async_main() -> None:
     )
     parser.add_argument("--output", default="data", help="Output directory")
 
-    # Rate limiting options
-    parser.add_argument(
-        "--rate-limit",
-        type=float,
-        default=None,
-        help="Maximum requests per second (e.g., 2.0 for 2 requests/second). "
-             "Default: no limit (use with caution to avoid IP bans).",
-    )
-    parser.add_argument(
-        "--rate-jitter",
-        type=float,
-        default=0.2,
-        help="Random jitter factor for request intervals (0.0-1.0). "
-             "Adds randomness to request timing to appear more human-like. "
-             "Default: 0.2 (20%% variance).",
-    )
-
     # Database export options
     parser.add_argument(
         "--export-sqlite",
@@ -218,10 +195,7 @@ async def async_main() -> None:
 
     # Handle --discover mode
     if args.discover:
-        spider = HKJCRacingSpider(
-            rate_limit=args.rate_limit,
-            rate_jitter=args.rate_jitter,
-        )
+        spider = HKJCRacingSpider()
         dates = await spider.discover_dates(
             start_date=start_date,
             end_date=end_date,
@@ -295,10 +269,7 @@ async def async_main() -> None:
 
     # Handle --start-date mode: discover dates first, then scrape discovered dates
     if start_date:
-        spider = HKJCRacingSpider(
-            rate_limit=args.rate_limit,
-            rate_jitter=args.rate_jitter,
-        )
+        spider = HKJCRacingSpider()
         print(f"Discovering race dates from {start_date}" + (f" to {end_date}" if end_date else "..."))
         dates = await spider.discover_dates(
             start_date=start_date,
@@ -311,8 +282,6 @@ async def async_main() -> None:
         spider = HKJCRacingSpider(
             dates=date_strings,
             racecourse=args.racecourse,
-            rate_limit=args.rate_limit,
-            rate_jitter=args.rate_jitter,
         )
         result = await spider.run()
         grouped = group_items_by_table(result.items)
@@ -345,8 +314,6 @@ async def async_main() -> None:
         args.date,
         args.racecourse,
         args.output,
-        args.rate_limit,
-        args.rate_jitter,
         args.export_sqlite,
         args.db_path,
     )
