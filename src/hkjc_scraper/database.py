@@ -15,7 +15,28 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Generator, Sequence
+
+
+def chunks[T](lst: Sequence[T], n: int) -> Generator[Sequence[T], None, None]:
+    """Yield successive n-sized chunks from a list.
+
+    Args:
+        lst: The list to chunk.
+        n: The chunk size.
+
+    Yields:
+        Sequences of up to n elements from the input list.
+
+    Example:
+        >>> list(chunks([1, 2, 3, 4, 5], 2))
+        [[1, 2], [3, 4], [5]]
+    """
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]
 
 
 def create_database(db_path: str | Path) -> None:
@@ -509,16 +530,11 @@ def import_races(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO races (
-                    race_id, race_date, race_no, racecourse, class, distance,
-                    going, surface, track, race_name, rating, sectional_times,
-                    prize_money, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
+            records_to_insert.append((
                 record.get("race_id"),
                 record.get("race_date"),
                 record.get("race_no"),
@@ -533,9 +549,28 @@ def import_races(data: list[dict], conn: sqlite3.Connection) -> int:
                 json.dumps(record.get("sectional_times", [])),
                 record.get("prize_money") or 0,
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError, json.JSONEncodeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO races (
+                    race_id, race_date, race_no, racecourse, class, distance,
+                    going, surface, track, race_name, rating, sectional_times,
+                    prize_money, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -563,17 +598,11 @@ def import_performance(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO performance (
-                    race_id, horse_id, jockey_id, trainer_id, horse_no,
-                    position, horse_name, jockey, trainer, actual_weight,
-                    body_weight, draw, margin, finish_time, win_odds,
-                    running_position
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            records_to_insert.append((
                 record.get("race_id"),
                 record.get("horse_id"),
                 record.get("jockey_id"),
@@ -591,9 +620,29 @@ def import_performance(data: list[dict], conn: sqlite3.Connection) -> int:
                 record.get("win_odds"),
                 json.dumps(record.get("running_position", [])),
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError, json.JSONEncodeError):
             # Skip records with invalid data (e.g., missing foreign key)
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO performance (
+                    race_id, horse_id, jockey_id, trainer_id, horse_no,
+                    position, horse_name, jockey, trainer, actual_weight,
+                    body_weight, draw, margin, finish_time, win_odds,
+                    running_position
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -621,22 +670,36 @@ def import_dividends(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO dividends (
-                    race_id, pool, winning_combination, payout
-                ) VALUES (?, ?, ?, ?)
-            """, (
+            records_to_insert.append((
                 record.get("race_id"),
                 record.get("pool"),
                 record.get("winning_combination"),
                 record.get("payout"),
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO dividends (
+                    race_id, pool, winning_combination, payout
+                ) VALUES (?, ?, ?, ?)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -664,23 +727,37 @@ def import_incidents(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT INTO incidents (
-                    race_id, position, horse_no, horse_name, incident_report
-                ) VALUES (?, ?, ?, ?, ?)
-            """, (
+            records_to_insert.append((
                 record.get("race_id"),
                 record.get("position"),
                 record.get("horse_no"),
                 record.get("horse_name"),
                 record.get("incident_report"),
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT INTO incidents (
+                    race_id, position, horse_no, horse_name, incident_report
+                ) VALUES (?, ?, ?, ?, ?)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -708,19 +785,11 @@ def import_horses(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO horses (
-                    horse_id, name, country_of_birth, age, colour, gender,
-                    sire, dam, damsire, trainer, owner, current_rating,
-                    initial_rating, season_prize, total_prize, wins, places,
-                    shows, total, location, import_type, import_date,
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
+            records_to_insert.append((
                 record.get("horse_id"),
                 record.get("name"),
                 record.get("country_of_birth"),
@@ -744,9 +813,31 @@ def import_horses(data: list[dict], conn: sqlite3.Connection) -> int:
                 record.get("import_type"),
                 record.get("import_date"),
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO horses (
+                    horse_id, name, country_of_birth, age, colour, gender,
+                    sire, dam, damsire, trainer, owner, current_rating,
+                    initial_rating, season_prize, total_prize, wins, places,
+                    shows, total, location, import_type, import_date,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -774,15 +865,11 @@ def import_jockeys(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO jockeys (
-                    jockey_id, name, age, background, achievements,
-                    career_wins, career_win_rate, season_stats, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
+            records_to_insert.append((
                 record.get("jockey_id"),
                 record.get("name"),
                 record.get("age"),
@@ -792,9 +879,27 @@ def import_jockeys(data: list[dict], conn: sqlite3.Connection) -> int:
                 record.get("career_win_rate"),
                 json.dumps(record.get("season_stats")) if record.get("season_stats") else None,
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError, json.JSONEncodeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO jockeys (
+                    jockey_id, name, age, background, achievements,
+                    career_wins, career_win_rate, season_stats, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -822,15 +927,11 @@ def import_trainers(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO trainers (
-                    trainer_id, name, age, background, achievements,
-                    career_wins, career_win_rate, season_stats, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
+            records_to_insert.append((
                 record.get("trainer_id"),
                 record.get("name"),
                 record.get("age"),
@@ -840,9 +941,27 @@ def import_trainers(data: list[dict], conn: sqlite3.Connection) -> int:
                 record.get("career_win_rate"),
                 json.dumps(record.get("season_stats")) if record.get("season_stats") else None,
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError, json.JSONEncodeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO trainers (
+                    trainer_id, name, age, background, achievements,
+                    career_wins, career_win_rate, season_stats, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -870,14 +989,11 @@ def import_sectional_times(data: list[dict], conn: sqlite3.Connection) -> int:
     if not data:
         return 0
 
-    count = 0
+    # Prepare records with proper formatting
+    records_to_insert = []
     for record in data:
         try:
-            conn.execute("""
-                INSERT OR REPLACE INTO sectional_times (
-                    race_id, horse_no, section_number, position, margin, time
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            """, (
+            records_to_insert.append((
                 record.get("race_id"),
                 record.get("horse_no"),
                 record.get("section_number"),
@@ -885,9 +1001,26 @@ def import_sectional_times(data: list[dict], conn: sqlite3.Connection) -> int:
                 record.get("margin"),
                 record.get("time"),
             ))
-            count += 1
-        except sqlite3.Error:
+        except (KeyError, TypeError):
             # Skip records with invalid data
+            pass
+
+    if not records_to_insert:
+        return 0
+
+    # Batch insert with executemany
+    count = 0
+    cursor = conn.cursor()
+    for batch in chunks(records_to_insert, 500):
+        try:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO sectional_times (
+                    race_id, horse_no, section_number, position, margin, time
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, batch)
+            count += len(batch)
+        except sqlite3.Error:
+            # Skip problematic batches
             pass
 
     conn.commit()
@@ -994,8 +1127,8 @@ def export_json_to_db(
         column_list = ", ".join(columns)
         query = f"INSERT OR REPLACE INTO {table_name} ({column_list}) VALUES ({placeholders})"
 
-        # Prepare and execute batch insert
-        inserted = 0
+        # Prepare records for batch insert
+        records_to_insert = []
         for record in records:
             values = []
             for col in columns:
@@ -1006,12 +1139,16 @@ def export_json_to_db(
                     value = json.dumps(value, ensure_ascii=False)
 
                 values.append(value)
+            records_to_insert.append(values)
 
+        # Execute batch insert with executemany
+        inserted = 0
+        for batch in chunks(records_to_insert, 500):
             try:
-                cursor.execute(query, values)
-                inserted += 1
+                cursor.executemany(query, batch)
+                inserted += len(batch)
             except sqlite3.Error as e:
-                print(f"Warning: Failed to insert record into {table_name}: {e}")
+                print(f"Warning: Failed to insert batch into {table_name}: {e}")
 
         counts[table_name] = counts.get(table_name, 0) + inserted
         print(f"Imported {inserted} records into {table_name} from {json_file.name}")
