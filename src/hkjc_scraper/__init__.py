@@ -1,9 +1,10 @@
 """HKJC Racing Scraper - Extract horse racing data from HKJC."""
 
-# Database
+# Database (PostgreSQL)
 from hkjc_scraper.database import (
     create_database,
     export_json_to_db,
+    get_database_url,
     get_db_connection,
     import_dividends,
     import_horses,
@@ -13,6 +14,7 @@ from hkjc_scraper.database import (
     import_races,
     import_sectional_times,
     import_trainers,
+    update_performance_gear,
     load_from_db,
 )
 
@@ -41,6 +43,7 @@ from hkjc_scraper.common import (
 # Profile parsing
 from hkjc_scraper.horse_parsers import (
     parse_horse_profile,
+    parse_horse_gear,
 )
 from hkjc_scraper.jockey_trainer_parsers import (
     parse_jockey_profile,
@@ -48,9 +51,10 @@ from hkjc_scraper.jockey_trainer_parsers import (
 )
 
 __all__ = [
-    # Database
+    # Database (PostgreSQL)
     "create_database",
     "export_json_to_db",
+    "get_database_url",
     "get_db_connection",
     "import_dividends",
     "import_horses",
@@ -60,6 +64,7 @@ __all__ = [
     "import_races",
     "import_sectional_times",
     "import_trainers",
+    "update_performance_gear",
     "load_from_db",
     # Data parsers
     "clean_position",
@@ -79,6 +84,7 @@ __all__ = [
     "parse_career_record",
     # Profile parsers
     "parse_horse_profile",
+    "parse_horse_gear",
     "parse_jockey_profile",
     "parse_trainer_profile",
 ]

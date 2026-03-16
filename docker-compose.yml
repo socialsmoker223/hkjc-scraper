@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hkjc_racing}
+      POSTGRES_USER: ${POSTGRES_USER:-hkjc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hkjc_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hkjc}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hkjc}:${POSTGRES_PASSWORD:-hkjc_dev}@db:5432/${POSTGRES_DB:-hkjc_racing}
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    # Override entrypoint for interactive dev use
+    entrypoint: ["uv", "run", "hkjc-scrape"]
+    # Default: show help. Override with: docker compose run app --date 2026/03/01
+    command: ["--help"]
+
+volumes:
+  pgdata:

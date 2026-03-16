@@ -25,6 +25,7 @@ from hkjc_scraper.utils import generate_date_range, parse_race_date
 
 from hkjc_scraper.horse_parsers import (
     parse_horse_profile as parse_horse_profile_data,
+    parse_horse_gear,
 )
 from hkjc_scraper.jockey_trainer_parsers import (
     parse_jockey_profile as parse_jockey_profile_data,
@@ -314,7 +315,7 @@ class HKJCRacingSpider(Spider):
         for horse_id, horse_name in horses.items():
             if horse_id not in self._seen_horses:
                 self._seen_horses.add(horse_id)
-                url = f"https://racing.hkjc.com/zh-hk/local/information/horse?horseid={horse_id}"
+                url = f"https://racing.hkjc.com/zh-hk/local/information/horse?horseid={horse_id}&Option=1"
                 yield Request(url, callback=self.parse_horse_profile, meta={"horse_id": horse_id, "horse_name": horse_name})
 
         # Fetch jockey profiles
@@ -599,7 +600,7 @@ class HKJCRacingSpider(Spider):
         yield  # Make this a generator for type checkers
 
     async def parse_horse_profile(self, response):
-        """Parse horse profile page and yield horse data."""
+        """Parse horse profile page and yield horse data + gear updates."""
         meta = response.meta
         horse_id = meta.get("horse_id")
         horse_name = meta.get("horse_name", "")
@@ -607,6 +608,10 @@ class HKJCRacingSpider(Spider):
         profile_data = parse_horse_profile_data(response, horse_id, horse_name)
         profile_data["horse_id"] = horse_id
         yield {"table": "horses", "data": profile_data}
+
+        # Parse gear from past performance table (Option=1 page)
+        for gear_item in parse_horse_gear(response, horse_id):
+            yield {"table": "performance_gear", "data": gear_item}
 
     async def parse_jockey_profile(self, response):
         """Parse jockey profile page and yield jockey data."""

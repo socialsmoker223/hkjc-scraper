@@ -20,8 +20,8 @@ The codebase is organized into focused modules under `src/hkjc_scraper/`:
 | Module | Purpose | Key Functions |
 |--------|---------|---------------|
 | `spider.py` | Main spider implementation | `HKJCRacingSpider` class |
-| `cli.py` | Command-line interface | `main()` entry point with `--export-sqlite`, `--analyze` flags |
-| `database.py` | SQLite database layer | `create_database`, `export_json_to_db`, `load_from_db`, `import_*` functions |
+| `cli.py` | Command-line interface | `main()` entry point with `--export-db`, `--analyze` flags |
+| `database.py` | PostgreSQL database layer | `create_database`, `export_json_to_db`, `load_from_db`, `import_*` functions |
 | `analytics.py` | Statistical analysis | `calculate_jockey_performance`, `calculate_draw_bias`, `generate_racing_summary`, etc. |
 | `__init__.py` | Public API exports | 40+ exported functions |
 
@@ -104,14 +104,15 @@ from hkjc_scraper import (
 
 ### Database Module (`database.py`)
 
-SQLite is built into Python 3.13+ - no external dependencies needed.
+Uses PostgreSQL via `psycopg2-binary`. Schema is defined in `docker/init.sql` (single source of truth).
 
 **Core Functions:**
-- `create_database(db_path)` - Creates all tables with indexes
-- `get_db_connection(db_path)` - Returns connection with FKs enabled
-- `export_json_to_db(data_dir, db_path)` - Bulk export from JSON files
+- `create_database(database_url)` - Creates all tables from `docker/init.sql`
+- `get_db_connection(database_url)` - Returns psycopg2 connection
+- `export_json_to_db(data_dir, database_url)` - Bulk export from JSON files
+- `get_database_url()` - Returns `DATABASE_URL` from environment
 
-**Import Functions** (one per table):
+**Import Functions** (one per table, all use `_batch_upsert` helper):
 - `import_races(data, conn)` - Race metadata
 - `import_performance(data, conn)` - Horse results per race
 - `import_dividends(data, conn)` - Payout information
@@ -122,13 +123,14 @@ SQLite is built into Python 3.13+ - no external dependencies needed.
 - `import_sectional_times(data, conn)` - Sectional time data
 
 **Query Functions:**
-- `load_from_db(db_path, table, where_clause, params)` - Load data as dicts
+- `load_from_db(table, where_clause, params, database_url)` - Load data as dicts
 
 **Database Schema Features:**
 - Foreign key constraints with ON DELETE CASCADE/SET NULL
 - Indexes on frequently queried columns (race_date, horse_id, jockey_id, trainer_id)
-- Complex types serialized as JSON (rating, sectional_times, running_position)
-- Unique constraints to prevent duplicates
+- JSONB columns for native JSON querying (rating, sectional_times, running_position)
+- UPSERT via `INSERT ... ON CONFLICT ... DO UPDATE`
+- Batch inserts via `psycopg2.extras.execute_values`
 
 ### Analytics Module (`analytics.py`)
 
@@ -155,11 +157,12 @@ SQLite is built into Python 3.13+ - no external dependencies needed.
 ### Running Tests
 
 ```bash
-# Unit tests only (no network requests)
+# Unit tests only (no database required)
 uv run pytest tests/ -v -m "not integration"
 
-# Integration tests (makes network requests)
-uv run pytest tests/ -v -m integration
+# Integration tests (requires PostgreSQL: docker compose up db -d)
+DATABASE_URL=postgresql://hkjc:hkjc_dev@localhost:5432/hkjc_racing \
+  uv run pytest tests/ -v -m integration
 
 # All tests
 uv run pytest tests/ -v
@@ -214,8 +217,8 @@ uv run hkjc-scrape --date 2026/03/01 --racecourse ST
 # Auto-discover latest race
 uv run hkjc-scrape --racecourse ST
 
-# Export to SQLite database after scraping
-uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-sqlite
+# Export to PostgreSQL database after scraping
+uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-db
 
 # Run analytics on existing data
 uv run hkjc-scrape --analyze
@@ -248,8 +251,8 @@ The `data/.discovered_dates.json` cache stores discovered dates for fast re-runs
 - `--refresh-cache` - Re-verify cached dates during discovery
 
 **Database Export:**
-- `--export-sqlite` - Export JSON data to SQLite after scraping
-- `--db-path PATH` - Custom database path (default: data/hkjc_racing.db)
+- `--export-db` - Export JSON data to PostgreSQL after scraping
+- `--database-url URL` - PostgreSQL connection URL (or set `DATABASE_URL` env var)
 
 **Analytics:**
 - `--analyze` - Run analytics on existing data

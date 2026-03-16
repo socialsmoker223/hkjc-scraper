@@ -1,1199 +1,603 @@
-"""SQLite database schema for HKJC racing data.
+"""PostgreSQL database layer for HKJC racing data.
 
-This module defines the database schema for storing horse racing data extracted
-from the HKJC website. It includes tables for races, performances, dividends,
-incidents, horses, jockeys, trainers, and sectional times.
+This module provides functions for importing scraped racing data into PostgreSQL
+and querying it back. Uses psycopg2 with execute_values for efficient batch inserts.
 
-The schema is designed with:
-- Proper primary keys and foreign keys with ON DELETE behavior
-- Indexes on frequently queried columns
-- Appropriate SQLite data types (INTEGER, TEXT, REAL)
+Usage:
+    Set DATABASE_URL environment variable:
+        postgresql://user:password@host:port/dbname
+
+    Or pass the URL directly to functions.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
+
+import psycopg2
+import psycopg2.extras
+from psycopg2.extras import execute_values
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Callable, Generator, Sequence
 
 
-def chunks[T](lst: Sequence[T], n: int) -> Generator[Sequence[T], None, None]:
-    """Yield successive n-sized chunks from a list.
-
-    Args:
-        lst: The list to chunk.
-        n: The chunk size.
-
-    Yields:
-        Sequences of up to n elements from the input list.
-
-    Example:
-        >>> list(chunks([1, 2, 3, 4, 5], 2))
-        [[1, 2], [3, 4], [5]]
-    """
+def _chunks[T](lst: Sequence[T], n: int) -> Generator[Sequence[T], None, None]:
+    """Yield successive n-sized chunks from a list."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
 
 
-def create_database(db_path: str | Path) -> None:
-    """Create the SQLite database schema with all tables and indexes.
+def get_database_url() -> str:
+    """Get PostgreSQL connection URL from environment.
 
-    This function creates a new SQLite database at the specified path with
-    all required tables, foreign keys, and indexes. If the database already
-    exists, it will add any missing tables or indexes.
-
-    Args:
-        db_path: Path to the database file. Will be created if it doesn't exist.
+    Returns:
+        PostgreSQL connection string.
 
     Raises:
-        sqlite3.Error: If database creation fails.
-
-    Example:
-        >>> create_database("hkjc_racing.db")
-        >>> # Database created with all tables and indexes
-
-    Note:
-        Foreign key constraints are enabled by default. Referential integrity
-        is enforced with ON DELETE CASCADE for child records.
+        ValueError: If DATABASE_URL is not set.
     """
-    db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-
-    # Create tables in dependency order (parent tables first)
-    _create_races_table(conn)
-    _create_horses_table(conn)
-    _create_jockeys_table(conn)
-    _create_trainers_table(conn)
-    _create_performance_table(conn)
-    _create_dividends_table(conn)
-    _create_incidents_table(conn)
-    _create_sectional_times_table(conn)
-
-    conn.commit()
-    conn.close()
-
-
-def _create_races_table(conn: sqlite3.Connection) -> None:
-    """Create the races table with indexes.
-
-    The races table stores race metadata including date, course, distance,
-    and track conditions. Each race is identified by a unique race_id.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS races (
-            -- Primary key
-            race_id TEXT PRIMARY KEY NOT NULL,
-
-            -- Race identification
-            race_date TEXT NOT NULL,
-            race_no INTEGER NOT NULL,
-            racecourse TEXT NOT NULL,
-
-            -- Race details
-            class TEXT,
-            distance INTEGER,
-            going TEXT,
-            surface TEXT,
-            track TEXT,
-            race_name TEXT,
-
-            -- Rating stored as JSON string {"high": int, "low": int}
-            rating TEXT,
-
-            -- Sectional times stored as JSON array of strings
-            sectional_times TEXT,
-
-            -- Prize money as integer (raw value from JSON, e.g., 1170000 for HK$1,170,000)
-            prize_money INTEGER DEFAULT 0,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise ValueError(
+            "DATABASE_URL environment variable is not set. "
+            "Example: postgresql://hkjc:hkjc_dev@localhost:5432/hkjc_racing"
         )
-    """)
+    return url
 
-    # Index for common queries by date
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_races_race_date
-        ON races(race_date)
-    """)
 
-    # Index for racecourse queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_races_racecourse
-        ON races(racecourse)
-    """)
-
-    # Composite index for date + racecourse queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_races_date_course
-        ON races(race_date, racecourse)
-    """)
-
-
-def _create_horses_table(conn: sqlite3.Connection) -> None:
-    """Create the horses table with indexes.
-
-    The horses table stores horse profile information including breeding,
-    career stats, and ownership details.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS horses (
-            -- Primary key
-            horse_id TEXT PRIMARY KEY NOT NULL,
-
-            -- Basic information
-            name TEXT NOT NULL,
-            country_of_birth TEXT,
-            age TEXT,
-            colour TEXT,
-            gender TEXT,
-
-            -- Breeding
-            sire TEXT,
-            dam TEXT,
-            damsire TEXT,
-
-            -- Connections
-            trainer TEXT,
-            owner TEXT,
-
-            -- Rating
-            current_rating INTEGER,
-            initial_rating INTEGER,
-
-            -- Prize money in cents
-            season_prize INTEGER DEFAULT 0,
-            total_prize INTEGER DEFAULT 0,
-
-            -- Career statistics
-            wins INTEGER DEFAULT 0,
-            places INTEGER DEFAULT 0,
-            shows INTEGER DEFAULT 0,
-            total INTEGER DEFAULT 0,
-
-            -- Import information
-            location TEXT,
-            import_type TEXT,
-            import_date TEXT,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Index for name searches
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_horses_name
-        ON horses(name)
-    """)
-
-    # Index for trainer lookups
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_horses_trainer
-        ON horses(trainer)
-    """)
-
-
-def _create_jockeys_table(conn: sqlite3.Connection) -> None:
-    """Create the jockeys table with indexes.
-
-    The jockeys table stores jockey profile information including career
-    statistics and achievements.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS jockeys (
-            -- Primary key
-            jockey_id TEXT PRIMARY KEY NOT NULL,
-
-            -- Basic information
-            name TEXT NOT NULL,
-            age TEXT,
-
-            -- Background
-            background TEXT,
-            achievements TEXT,
-
-            -- Career statistics
-            career_wins INTEGER DEFAULT 0,
-            career_win_rate TEXT,
-
-            -- Season stats stored as JSON
-            -- {"wins": int, "places": int, "win_rate": str, "prize_money": int}
-            season_stats TEXT,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Index for name searches
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_jockeys_name
-        ON jockeys(name)
-    """)
-
-
-def _create_trainers_table(conn: sqlite3.Connection) -> None:
-    """Create the trainers table with indexes.
-
-    The trainers table stores trainer profile information including career
-    statistics and achievements.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS trainers (
-            -- Primary key
-            trainer_id TEXT PRIMARY KEY NOT NULL,
-
-            -- Basic information
-            name TEXT NOT NULL,
-            age TEXT,
-
-            -- Background
-            background TEXT,
-            achievements TEXT,
-
-            -- Career statistics
-            career_wins INTEGER DEFAULT 0,
-            career_win_rate TEXT,
-
-            -- Season stats stored as JSON
-            -- {"wins": int, "places": int, "shows": int, "fourth": int,
-            --  "total_runners": int, "win_rate": str, "prize_money": int}
-            season_stats TEXT,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Index for name searches
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_trainers_name
-        ON trainers(name)
-    """)
-
-
-def _create_performance_table(conn: sqlite3.Connection) -> None:
-    """Create the performance table with foreign keys and indexes.
-
-    The performance table stores horse results for each race. Each record
-    represents a single horse's performance in a specific race.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS performance (
-            -- Primary key (auto-generated)
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            -- Foreign keys
-            race_id TEXT NOT NULL REFERENCES races(race_id) ON DELETE CASCADE,
-            horse_id TEXT REFERENCES horses(horse_id) ON DELETE SET NULL,
-            jockey_id TEXT REFERENCES jockeys(jockey_id) ON DELETE SET NULL,
-            trainer_id TEXT REFERENCES trainers(trainer_id) ON DELETE SET NULL,
-
-            -- Race identification
-            horse_no TEXT NOT NULL,
-            position TEXT NOT NULL,
-
-            -- Horse information (denormalized for query performance)
-            horse_name TEXT NOT NULL,
-            jockey TEXT,
-            trainer TEXT,
-
-            -- Weight information
-            actual_weight TEXT,
-            body_weight TEXT,
-
-            -- Race details
-            draw TEXT,
-            margin TEXT,
-            finish_time TEXT,
-            win_odds TEXT,
-
-            -- Running position stored as JSON array
-            -- e.g., ["1", "2", "3", "1"]
-            running_position TEXT,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-            -- Unique constraint: one record per horse per race
-            UNIQUE(race_id, horse_no)
-        )
-    """)
-
-    # Index for race queries (most common)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_performance_race_id
-        ON performance(race_id)
-    """)
-
-    # Index for horse history queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_performance_horse_id
-        ON performance(horse_id)
-    """)
-
-    # Index for jockey statistics
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_performance_jockey_id
-        ON performance(jockey_id)
-    """)
-
-    # Index for trainer statistics
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_performance_trainer_id
-        ON performance(trainer_id)
-    """)
-
-    # Index for position queries (e.g., finding winners)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_performance_position
-        ON performance(position)
-    """)
-
-
-def _create_dividends_table(conn: sqlite3.Connection) -> None:
-    """Create the dividends table with foreign keys and indexes.
-
-    The dividends table stores payout information for each race and pool type.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS dividends (
-            -- Primary key (auto-generated)
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            -- Foreign key
-            race_id TEXT NOT NULL REFERENCES races(race_id) ON DELETE CASCADE,
-
-            -- Pool information
-            pool TEXT NOT NULL,
-            winning_combination TEXT,
-            payout TEXT,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-            -- Unique constraint: one record per pool per race
-            UNIQUE(race_id, pool)
-        )
-    """)
-
-    # Index for race queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_dividends_race_id
-        ON dividends(race_id)
-    """)
-
-
-def _create_incidents_table(conn: sqlite3.Connection) -> None:
-    """Create the incidents table with foreign keys and indexes.
-
-    The incidents table stores race incident reports describing what
-    happened to each horse during the race.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS incidents (
-            -- Primary key (auto-generated)
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            -- Foreign key
-            race_id TEXT NOT NULL REFERENCES races(race_id) ON DELETE CASCADE,
-
-            -- Horse identification
-            position TEXT,
-            horse_no TEXT NOT NULL,
-            horse_name TEXT NOT NULL,
-
-            -- Incident details
-            incident_report TEXT,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Index for race queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_incidents_race_id
-        ON incidents(race_id)
-    """)
-
-    # Index for horse incident lookups
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_incidents_horse_no
-        ON incidents(horse_no)
-    """)
-
-
-def _create_sectional_times_table(conn: sqlite3.Connection) -> None:
-    """Create the sectional_times table with foreign keys and indexes.
-
-    The sectional_times table stores per-horse sectional time data,
-    recording position and margin at each section of the race.
-    """
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS sectional_times (
-            -- Primary key (auto-generated)
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            -- Foreign key
-            race_id TEXT NOT NULL REFERENCES races(race_id) ON DELETE CASCADE,
-
-            -- Horse identification
-            horse_no TEXT NOT NULL,
-            section_number INTEGER NOT NULL,
-
-            -- Section data
-            position INTEGER,
-            margin TEXT,
-            time REAL,
-
-            -- Metadata
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-            -- Unique constraint: one record per horse per section
-            UNIQUE(race_id, horse_no, section_number)
-        )
-    """)
-
-    # Index for race queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_sectional_times_race_id
-        ON sectional_times(race_id)
-    """)
-
-    # Index for horse sectional analysis
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_sectional_times_horse_no
-        ON sectional_times(horse_no)
-    """)
-
-    # Composite index for race + horse queries
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_sectional_times_race_horse
-        ON sectional_times(race_id, horse_no)
-    """)
-
-
-# Type aliases for query results
-Racecourse = Literal["沙田", "谷草"]
-
-
-def get_db_connection(db_path: str | Path) -> sqlite3.Connection:
-    """Get a database connection with foreign keys enabled.
+def get_db_connection(
+    database_url: str | None = None,
+) -> psycopg2.extensions.connection:
+    """Get a PostgreSQL database connection.
 
     Args:
-        db_path: Path to the database file.
+        database_url: PostgreSQL connection string.
+            If None, reads from DATABASE_URL env var.
 
     Returns:
-        A SQLite connection with foreign keys enabled.
-
-    Example:
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> cursor = conn.execute("SELECT * FROM races LIMIT 10")
-        >>> conn.close()
+        A psycopg2 connection.
     """
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    url = database_url or get_database_url()
+    return psycopg2.connect(url)
 
 
-def import_races(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import race records into the database.
+def create_database(database_url: str | None = None) -> None:
+    """Create the PostgreSQL database schema with all tables and indexes.
+
+    Reads and executes the docker/init.sql schema file. Safe to run multiple
+    times due to IF NOT EXISTS clauses.
 
     Args:
-        data: List of race dictionaries from JSON export.
-        conn: Database connection.
+        database_url: PostgreSQL connection string.
+            If None, reads from DATABASE_URL env var.
+    """
+    conn = get_db_connection(database_url)
+    try:
+        cursor = conn.cursor()
+        init_sql = Path(__file__).parent.parent.parent / "docker" / "init.sql"
+        if not init_sql.exists():
+            raise FileNotFoundError(
+                f"Schema file not found: {init_sql}. "
+                "Ensure docker/init.sql exists in the project root."
+            )
+        cursor.execute(init_sql.read_text())
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Generic batch upsert helper
+# ---------------------------------------------------------------------------
+
+def _batch_upsert(
+    data: list[dict],
+    conn: psycopg2.extensions.connection,
+    sql: str,
+    prepare_row: Callable[[dict], tuple | None],
+    conflict_keys: tuple[int, ...] = (0,),
+    batch_size: int = 500,
+    template: str | None = None,
+) -> int:
+    """Insert records in batches using execute_values.
+
+    Records are prepared first (validated and serialized), deduplicated by
+    conflict key, then inserted in batches. Invalid records are silently
+    skipped.
+
+    Args:
+        data: Raw record dicts from JSON.
+        conn: PostgreSQL connection (caller manages transaction).
+        sql: INSERT ... VALUES %s ... ON CONFLICT ... statement.
+            Must use a single ``%s`` placeholder for the VALUES list.
+        prepare_row: Callable that converts a dict to a tuple of values,
+            or returns None to skip the record.
+        conflict_keys: Tuple of positional indices in the prepared row that
+            form the unique/conflict key. Duplicates are resolved by keeping
+            the last occurrence. Defaults to (0,) (first column).
+        batch_size: Number of records per batch.
+        template: Optional psycopg2 execute_values template string for
+            rows that include SQL expressions like NOW().
 
     Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("races_2026-03-01.json") as f:
-        ...     races = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_races(races, conn)
-        >>> print(f"Imported {count} races")
-        >>> conn.close()
+        Number of records successfully prepared and inserted.
     """
     if not data:
         return 0
 
-    # Prepare records with proper formatting
-    records_to_insert = []
+    seen: dict[tuple, int] = {}
+    rows: list[tuple] = []
     for record in data:
         try:
-            records_to_insert.append((
-                record.get("race_id"),
-                record.get("race_date"),
-                record.get("race_no"),
-                record.get("racecourse"),
-                record.get("class"),
-                record.get("distance"),
-                record.get("going"),
-                record.get("surface"),
-                record.get("track"),
-                record.get("race_name"),
-                json.dumps(record.get("rating")) if record.get("rating") else None,
-                json.dumps(record.get("sectional_times", [])),
-                record.get("prize_money") or 0,
-            ))
-        except (KeyError, TypeError, json.JSONEncodeError):
-            # Skip records with invalid data
-            pass
+            row = prepare_row(record)
+            if row is None:
+                continue
+            key = tuple(row[i] for i in conflict_keys)
+            if key in seen:
+                # Keep last occurrence — overwrite earlier duplicate
+                rows[seen[key]] = row
+            else:
+                seen[key] = len(rows)
+                rows.append(row)
+        except (KeyError, TypeError, ValueError):
+            continue
 
-    if not records_to_insert:
+    if not rows:
         return 0
 
-    # Batch insert with executemany
-    count = 0
     cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO races (
-                    race_id, race_date, race_no, racecourse, class, distance,
-                    going, surface, track, race_name, rating, sectional_times,
-                    prize_money, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
+    for batch in _chunks(rows, batch_size):
+        execute_values(cursor, sql, batch, template=template)
 
-    conn.commit()
-    return count
+    return len(rows)
 
 
-def import_performance(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import performance records into the database.
+# ---------------------------------------------------------------------------
+# Per-table import functions
+# ---------------------------------------------------------------------------
+
+def import_races(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import race records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        rating = r.get("rating")
+        return (
+            r.get("race_id"),
+            r.get("race_date"),
+            r.get("race_no"),
+            r.get("racecourse"),
+            r.get("class"),
+            r.get("distance"),
+            r.get("going"),
+            r.get("surface"),
+            r.get("track"),
+            r.get("race_name"),
+            json.dumps(rating) if rating else None,
+            json.dumps(r.get("sectional_times", [])),
+            r.get("prize_money") or 0,
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO races (
+            race_id, race_date, race_no, racecourse, class, distance,
+            going, surface, track, race_name, rating, sectional_times,
+            prize_money, updated_at
+        ) VALUES %s
+        ON CONFLICT (race_id) DO UPDATE SET
+            race_date = EXCLUDED.race_date,
+            race_no = EXCLUDED.race_no,
+            racecourse = EXCLUDED.racecourse,
+            class = EXCLUDED.class,
+            distance = EXCLUDED.distance,
+            going = EXCLUDED.going,
+            surface = EXCLUDED.surface,
+            track = EXCLUDED.track,
+            race_name = EXCLUDED.race_name,
+            rating = EXCLUDED.rating,
+            sectional_times = EXCLUDED.sectional_times,
+            prize_money = EXCLUDED.prize_money,
+            updated_at = NOW()
+    """, _prepare, template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())")
+
+
+def import_performance(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import performance records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        return (
+            r.get("race_id"),
+            r.get("horse_id"),
+            r.get("jockey_id"),
+            r.get("trainer_id"),
+            r.get("horse_no"),
+            r.get("position"),
+            r.get("horse_name"),
+            r.get("jockey"),
+            r.get("trainer"),
+            r.get("actual_weight"),
+            r.get("body_weight"),
+            r.get("draw"),
+            r.get("margin"),
+            r.get("finish_time"),
+            r.get("win_odds"),
+            json.dumps(r.get("running_position", [])),
+            r.get("gear"),
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO performance (
+            race_id, horse_id, jockey_id, trainer_id, horse_no,
+            position, horse_name, jockey, trainer, actual_weight,
+            body_weight, draw, margin, finish_time, win_odds,
+            running_position, gear
+        ) VALUES %s
+        ON CONFLICT (race_id, horse_no) DO UPDATE SET
+            horse_id = EXCLUDED.horse_id,
+            jockey_id = EXCLUDED.jockey_id,
+            trainer_id = EXCLUDED.trainer_id,
+            position = EXCLUDED.position,
+            horse_name = EXCLUDED.horse_name,
+            jockey = EXCLUDED.jockey,
+            trainer = EXCLUDED.trainer,
+            actual_weight = EXCLUDED.actual_weight,
+            body_weight = EXCLUDED.body_weight,
+            draw = EXCLUDED.draw,
+            margin = EXCLUDED.margin,
+            finish_time = EXCLUDED.finish_time,
+            win_odds = EXCLUDED.win_odds,
+            running_position = EXCLUDED.running_position,
+            gear = EXCLUDED.gear
+    """, _prepare, conflict_keys=(0, 4))
+
+
+def import_dividends(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import dividend records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        return (
+            r.get("race_id"),
+            r.get("pool"),
+            r.get("winning_combination"),
+            r.get("payout"),
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO dividends (race_id, pool, winning_combination, payout)
+        VALUES %s
+        ON CONFLICT (race_id, pool) DO UPDATE SET
+            winning_combination = EXCLUDED.winning_combination,
+            payout = EXCLUDED.payout
+    """, _prepare, conflict_keys=(0, 1))
+
+
+def import_incidents(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import incident records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        return (
+            r.get("race_id"),
+            r.get("position"),
+            r.get("horse_no"),
+            r.get("horse_name"),
+            r.get("incident_report"),
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO incidents (race_id, position, horse_no, horse_name, incident_report)
+        VALUES %s
+    """, _prepare)
+
+
+def import_horses(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import horse profile records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        return (
+            r.get("horse_id"),
+            r.get("name"),
+            r.get("country_of_birth"),
+            r.get("age"),
+            r.get("colour"),
+            r.get("gender"),
+            r.get("sire"),
+            r.get("dam"),
+            r.get("damsire"),
+            r.get("trainer"),
+            r.get("owner"),
+            r.get("current_rating"),
+            r.get("initial_rating"),
+            r.get("season_prize") or 0,
+            r.get("total_prize") or 0,
+            r.get("wins") or 0,
+            r.get("places") or 0,
+            r.get("shows") or 0,
+            r.get("total") or 0,
+            r.get("location"),
+            r.get("import_type"),
+            r.get("import_date"),
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO horses (
+            horse_id, name, country_of_birth, age, colour, gender,
+            sire, dam, damsire, trainer, owner, current_rating,
+            initial_rating, season_prize, total_prize, wins, places,
+            shows, total, location, import_type, import_date, updated_at
+        ) VALUES %s
+        ON CONFLICT (horse_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            country_of_birth = EXCLUDED.country_of_birth,
+            age = EXCLUDED.age,
+            colour = EXCLUDED.colour,
+            gender = EXCLUDED.gender,
+            sire = EXCLUDED.sire,
+            dam = EXCLUDED.dam,
+            damsire = EXCLUDED.damsire,
+            trainer = EXCLUDED.trainer,
+            owner = EXCLUDED.owner,
+            current_rating = EXCLUDED.current_rating,
+            initial_rating = EXCLUDED.initial_rating,
+            season_prize = EXCLUDED.season_prize,
+            total_prize = EXCLUDED.total_prize,
+            wins = EXCLUDED.wins,
+            places = EXCLUDED.places,
+            shows = EXCLUDED.shows,
+            total = EXCLUDED.total,
+            location = EXCLUDED.location,
+            import_type = EXCLUDED.import_type,
+            import_date = EXCLUDED.import_date,
+            updated_at = NOW()
+    """, _prepare, template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())")
+
+
+def import_jockeys(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import jockey profile records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        season_stats = r.get("season_stats")
+        return (
+            r.get("jockey_id"),
+            r.get("name"),
+            r.get("age"),
+            r.get("background"),
+            r.get("achievements"),
+            r.get("career_wins") or 0,
+            r.get("career_win_rate"),
+            json.dumps(season_stats) if season_stats else None,
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO jockeys (
+            jockey_id, name, age, background, achievements,
+            career_wins, career_win_rate, season_stats, updated_at
+        ) VALUES %s
+        ON CONFLICT (jockey_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            age = EXCLUDED.age,
+            background = EXCLUDED.background,
+            achievements = EXCLUDED.achievements,
+            career_wins = EXCLUDED.career_wins,
+            career_win_rate = EXCLUDED.career_win_rate,
+            season_stats = EXCLUDED.season_stats,
+            updated_at = NOW()
+    """, _prepare, template="(%s, %s, %s, %s, %s, %s, %s, %s, NOW())")
+
+
+def import_trainers(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import trainer profile records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        season_stats = r.get("season_stats")
+        return (
+            r.get("trainer_id"),
+            r.get("name"),
+            r.get("age"),
+            r.get("background"),
+            r.get("achievements"),
+            r.get("career_wins") or 0,
+            r.get("career_win_rate"),
+            json.dumps(season_stats) if season_stats else None,
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO trainers (
+            trainer_id, name, age, background, achievements,
+            career_wins, career_win_rate, season_stats, updated_at
+        ) VALUES %s
+        ON CONFLICT (trainer_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            age = EXCLUDED.age,
+            background = EXCLUDED.background,
+            achievements = EXCLUDED.achievements,
+            career_wins = EXCLUDED.career_wins,
+            career_win_rate = EXCLUDED.career_win_rate,
+            season_stats = EXCLUDED.season_stats,
+            updated_at = NOW()
+    """, _prepare, template="(%s, %s, %s, %s, %s, %s, %s, %s, NOW())")
+
+
+def import_sectional_times(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Import sectional time records into PostgreSQL."""
+
+    def _prepare(r: dict) -> tuple:
+        return (
+            r.get("race_id"),
+            r.get("horse_no"),
+            r.get("section_number"),
+            r.get("position"),
+            r.get("margin"),
+            r.get("time"),
+        )
+
+    return _batch_upsert(data, conn, """
+        INSERT INTO sectional_times (
+            race_id, horse_no, section_number, position, margin, time
+        ) VALUES %s
+        ON CONFLICT (race_id, horse_no, section_number) DO UPDATE SET
+            position = EXCLUDED.position,
+            margin = EXCLUDED.margin,
+            time = EXCLUDED.time
+    """, _prepare, conflict_keys=(0, 1, 2))
+
+
+def update_performance_gear(
+    data: list[dict], conn: psycopg2.extensions.connection,
+) -> int:
+    """Update gear on existing performance records.
+
+    Uses (race_id, horse_id) to match records since gear data comes from
+    horse profile pages where horse_no is not available.
 
     Args:
-        data: List of performance dictionaries from JSON export.
-        conn: Database connection.
+        data: List of dicts with keys: race_id, horse_id, gear.
+        conn: PostgreSQL connection (caller manages transaction).
 
     Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("performance_2026-03-01.json") as f:
-        ...     performances = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_performance(performances, conn)
-        >>> print(f"Imported {count} performance records")
-        >>> conn.close()
+        Number of records updated.
     """
     if not data:
         return 0
 
-    # Prepare records with proper formatting
-    records_to_insert = []
-    for record in data:
-        try:
-            records_to_insert.append((
-                record.get("race_id"),
-                record.get("horse_id"),
-                record.get("jockey_id"),
-                record.get("trainer_id"),
-                record.get("horse_no"),
-                record.get("position"),
-                record.get("horse_name"),
-                record.get("jockey"),
-                record.get("trainer"),
-                record.get("actual_weight"),
-                record.get("body_weight"),
-                record.get("draw"),
-                record.get("margin"),
-                record.get("finish_time"),
-                record.get("win_odds"),
-                json.dumps(record.get("running_position", [])),
-            ))
-        except (KeyError, TypeError, json.JSONEncodeError):
-            # Skip records with invalid data (e.g., missing foreign key)
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
     cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO performance (
-                    race_id, horse_id, jockey_id, trainer_id, horse_no,
-                    position, horse_name, jockey, trainer, actual_weight,
-                    body_weight, draw, margin, finish_time, win_odds,
-                    running_position
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
-
-
-def import_dividends(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import dividend records into the database.
-
-    Args:
-        data: List of dividend dictionaries from JSON export.
-        conn: Database connection.
-
-    Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("dividends_2026-03-01.json") as f:
-        ...     dividends = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_dividends(dividends, conn)
-        >>> print(f"Imported {count} dividend records")
-        >>> conn.close()
-    """
-    if not data:
-        return 0
-
-    # Prepare records with proper formatting
-    records_to_insert = []
+    updated = 0
     for record in data:
-        try:
-            records_to_insert.append((
-                record.get("race_id"),
-                record.get("pool"),
-                record.get("winning_combination"),
-                record.get("payout"),
-            ))
-        except (KeyError, TypeError):
-            # Skip records with invalid data
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
-    cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO dividends (
-                    race_id, pool, winning_combination, payout
-                ) VALUES (?, ?, ?, ?)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
+        race_id = record.get("race_id")
+        horse_id = record.get("horse_id")
+        gear = record.get("gear")
+        if not race_id or not horse_id or not gear:
+            continue
+        cursor.execute(
+            "UPDATE performance SET gear = %s WHERE race_id = %s AND horse_id = %s",
+            (gear, race_id, horse_id),
+        )
+        updated += cursor.rowcount
+    return updated
 
 
-def import_incidents(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import incident records into the database.
-
-    Args:
-        data: List of incident dictionaries from JSON export.
-        conn: Database connection.
-
-    Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("incidents_2026-03-01.json") as f:
-        ...     incidents = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_incidents(incidents, conn)
-        >>> print(f"Imported {count} incident records")
-        >>> conn.close()
-    """
-    if not data:
-        return 0
-
-    # Prepare records with proper formatting
-    records_to_insert = []
-    for record in data:
-        try:
-            records_to_insert.append((
-                record.get("race_id"),
-                record.get("position"),
-                record.get("horse_no"),
-                record.get("horse_name"),
-                record.get("incident_report"),
-            ))
-        except (KeyError, TypeError):
-            # Skip records with invalid data
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
-    cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT INTO incidents (
-                    race_id, position, horse_no, horse_name, incident_report
-                ) VALUES (?, ?, ?, ?, ?)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
-
-
-def import_horses(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import horse profile records into the database.
-
-    Args:
-        data: List of horse dictionaries from JSON export.
-        conn: Database connection.
-
-    Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("horses_2026-03-01.json") as f:
-        ...     horses = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_horses(horses, conn)
-        >>> print(f"Imported {count} horse profiles")
-        >>> conn.close()
-    """
-    if not data:
-        return 0
-
-    # Prepare records with proper formatting
-    records_to_insert = []
-    for record in data:
-        try:
-            records_to_insert.append((
-                record.get("horse_id"),
-                record.get("name"),
-                record.get("country_of_birth"),
-                record.get("age"),
-                record.get("colour"),
-                record.get("gender"),
-                record.get("sire"),
-                record.get("dam"),
-                record.get("damsire"),
-                record.get("trainer"),
-                record.get("owner"),
-                record.get("current_rating"),
-                record.get("initial_rating"),
-                record.get("season_prize") or 0,
-                record.get("total_prize") or 0,
-                record.get("wins") or 0,
-                record.get("places") or 0,
-                record.get("shows") or 0,
-                record.get("total") or 0,
-                record.get("location"),
-                record.get("import_type"),
-                record.get("import_date"),
-            ))
-        except (KeyError, TypeError):
-            # Skip records with invalid data
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
-    cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO horses (
-                    horse_id, name, country_of_birth, age, colour, gender,
-                    sire, dam, damsire, trainer, owner, current_rating,
-                    initial_rating, season_prize, total_prize, wins, places,
-                    shows, total, location, import_type, import_date,
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
-
-
-def import_jockeys(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import jockey profile records into the database.
-
-    Args:
-        data: List of jockey dictionaries from JSON export.
-        conn: Database connection.
-
-    Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("jockeys_2026-03-01.json") as f:
-        ...     jockeys = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_jockeys(jockeys, conn)
-        >>> print(f"Imported {count} jockey profiles")
-        >>> conn.close()
-    """
-    if not data:
-        return 0
-
-    # Prepare records with proper formatting
-    records_to_insert = []
-    for record in data:
-        try:
-            records_to_insert.append((
-                record.get("jockey_id"),
-                record.get("name"),
-                record.get("age"),
-                record.get("background"),
-                record.get("achievements"),
-                record.get("career_wins") or 0,
-                record.get("career_win_rate"),
-                json.dumps(record.get("season_stats")) if record.get("season_stats") else None,
-            ))
-        except (KeyError, TypeError, json.JSONEncodeError):
-            # Skip records with invalid data
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
-    cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO jockeys (
-                    jockey_id, name, age, background, achievements,
-                    career_wins, career_win_rate, season_stats, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
-
-
-def import_trainers(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import trainer profile records into the database.
-
-    Args:
-        data: List of trainer dictionaries from JSON export.
-        conn: Database connection.
-
-    Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("trainers_2026-03-01.json") as f:
-        ...     trainers = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_trainers(trainers, conn)
-        >>> print(f"Imported {count} trainer profiles")
-        >>> conn.close()
-    """
-    if not data:
-        return 0
-
-    # Prepare records with proper formatting
-    records_to_insert = []
-    for record in data:
-        try:
-            records_to_insert.append((
-                record.get("trainer_id"),
-                record.get("name"),
-                record.get("age"),
-                record.get("background"),
-                record.get("achievements"),
-                record.get("career_wins") or 0,
-                record.get("career_win_rate"),
-                json.dumps(record.get("season_stats")) if record.get("season_stats") else None,
-            ))
-        except (KeyError, TypeError, json.JSONEncodeError):
-            # Skip records with invalid data
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
-    cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO trainers (
-                    trainer_id, name, age, background, achievements,
-                    career_wins, career_win_rate, season_stats, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
-
-
-def import_sectional_times(data: list[dict], conn: sqlite3.Connection) -> int:
-    """Import sectional time records into the database.
-
-    Args:
-        data: List of sectional time dictionaries from JSON export.
-        conn: Database connection.
-
-    Returns:
-        Number of records imported.
-
-    Example:
-        >>> with open("sectional_times_2026-03-01.json") as f:
-        ...     sectional_times = json.load(f)
-        >>> conn = get_db_connection("hkjc_racing.db")
-        >>> count = import_sectional_times(sectional_times, conn)
-        >>> print(f"Imported {count} sectional time records")
-        >>> conn.close()
-    """
-    if not data:
-        return 0
-
-    # Prepare records with proper formatting
-    records_to_insert = []
-    for record in data:
-        try:
-            records_to_insert.append((
-                record.get("race_id"),
-                record.get("horse_no"),
-                record.get("section_number"),
-                record.get("position"),
-                record.get("margin"),
-                record.get("time"),
-            ))
-        except (KeyError, TypeError):
-            # Skip records with invalid data
-            pass
-
-    if not records_to_insert:
-        return 0
-
-    # Batch insert with executemany
-    count = 0
-    cursor = conn.cursor()
-    for batch in chunks(records_to_insert, 500):
-        try:
-            cursor.executemany("""
-                INSERT OR REPLACE INTO sectional_times (
-                    race_id, horse_no, section_number, position, margin, time
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            """, batch)
-            count += len(batch)
-        except sqlite3.Error:
-            # Skip problematic batches
-            pass
-
-    conn.commit()
-    return count
-
+# ---------------------------------------------------------------------------
+# Bulk export / query
+# ---------------------------------------------------------------------------
 
 def export_json_to_db(
     data_dir: str | Path,
-    db_path: str | Path = "data/hkjc_racing.db",
+    database_url: str | None = None,
 ) -> dict[str, int]:
-    """Export JSON files from data directory to SQLite database.
-
-    Reads all JSON files matching the pattern '{table}_{date}.json' or
-    '{table}_batch.json' and inserts them into the corresponding database tables.
-    Creates the database schema if it doesn't exist.
+    """Export JSON files from data directory to PostgreSQL database.
 
     Args:
         data_dir: Directory containing the JSON data files.
-        db_path: Path to the SQLite database file (will be created if needed).
+        database_url: PostgreSQL connection string.
+            If None, reads from DATABASE_URL env var.
 
     Returns:
         Dictionary with table names as keys and record counts as values.
 
     Raises:
         FileNotFoundError: If data directory doesn't exist.
-        sqlite3.Error: If database operation fails.
-
-    Example:
-        >>> counts = export_json_to_db("data", "racing.db")
-        >>> print(counts)
-        {'races': 120, 'performance': 1320, 'horses': 450, ...}
     """
     data_path = Path(data_dir)
     if not data_path.exists():
         raise FileNotFoundError(f"Data directory not found: {data_path}")
 
-    db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    create_database(database_url)
 
-    # Ensure database schema exists
-    create_database(db_path)
+    conn = get_db_connection(database_url)
+    try:
+        counts: dict[str, int] = {}
 
-    conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    counts: dict[str, int] = {}
+        importers: dict[str, Callable] = {
+            "races": import_races,
+            "horses": import_horses,
+            "jockeys": import_jockeys,
+            "trainers": import_trainers,
+            "performance": import_performance,
+            "dividends": import_dividends,
+            "incidents": import_incidents,
+            "sectional_times": import_sectional_times,
+        }
 
-    # Table schemas for column mapping
-    table_schemas = {
-        "races": [
-            "race_id", "race_date", "race_no", "racecourse", "class", "distance",
-            "going", "surface", "track", "race_name", "rating", "sectional_times",
-            "prize_money",
-        ],
-        "horses": [
-            "horse_id", "name", "country_of_birth", "age", "colour", "gender",
-            "sire", "dam", "damsire", "trainer", "owner", "current_rating",
-            "initial_rating", "season_prize", "total_prize", "wins", "places",
-            "shows", "total", "location", "import_type", "import_date",
-        ],
-        "jockeys": [
-            "jockey_id", "name", "age", "background", "achievements",
-            "career_wins", "career_win_rate", "season_stats",
-        ],
-        "trainers": [
-            "trainer_id", "name", "age", "background", "achievements",
-            "career_wins", "career_win_rate", "season_stats",
-        ],
-        "performance": [
-            "race_id", "horse_id", "jockey_id", "trainer_id", "horse_no",
-            "position", "horse_name", "jockey", "trainer", "actual_weight",
-            "body_weight", "draw", "margin", "finish_time", "win_odds",
-            "running_position",
-        ],
-        "dividends": ["race_id", "pool", "winning_combination", "payout"],
-        "incidents": ["race_id", "position", "horse_no", "horse_name", "incident_report"],
-        "sectional_times": ["race_id", "horse_no", "section_number", "position", "margin", "time"],
-    }
+        # Parent tables first to satisfy foreign keys
+        table_order = [
+            "races", "horses", "jockeys", "trainers",
+            "performance", "dividends", "incidents", "sectional_times",
+        ]
 
-    # Find and process all JSON files
-    json_files = list(data_path.glob("*.json"))
+        json_files = list(data_path.glob("*.json"))
 
-    for json_file in sorted(json_files):
-        # Extract table name from filename (e.g., "races_2026-03-01.json" -> "races")
-        parts = json_file.stem.split("_")
-        if len(parts) < 2:
-            continue
+        for table_name in table_order:
+            importer = importers[table_name]
+            table_files = [
+                f for f in json_files
+                if f.stem.startswith(table_name + "_")
+            ]
 
-        table_name = parts[0]
-        if table_name not in table_schemas:
-            continue
+            for json_file in sorted(table_files):
+                with open(json_file, encoding="utf-8") as f:
+                    records = json.load(f)
 
-        # Read JSON data
-        with open(json_file, encoding="utf-8") as f:
-            records = json.load(f)
+                if not records:
+                    continue
 
-        if not records:
-            continue
+                inserted = importer(records, conn)
+                conn.commit()
+                counts[table_name] = counts.get(table_name, 0) + inserted
+                print(
+                    f"Imported {inserted} records into "
+                    f"{table_name} from {json_file.name}"
+                )
 
-        # Get column schema for this table
-        columns = table_schemas[table_name]
-
-        # Build insert query with UPSERT (INSERT OR REPLACE)
-        placeholders = ", ".join(["?"] * len(columns))
-        column_list = ", ".join(columns)
-        query = f"INSERT OR REPLACE INTO {table_name} ({column_list}) VALUES ({placeholders})"
-
-        # Prepare records for batch insert
-        records_to_insert = []
-        for record in records:
-            values = []
-            for col in columns:
-                value = record.get(col)
-
-                # Serialize complex types as JSON
-                if isinstance(value, (dict, list)):
-                    value = json.dumps(value, ensure_ascii=False)
-
-                values.append(value)
-            records_to_insert.append(values)
-
-        # Execute batch insert with executemany
-        inserted = 0
-        for batch in chunks(records_to_insert, 500):
-            try:
-                cursor.executemany(query, batch)
-                inserted += len(batch)
-            except sqlite3.Error as e:
-                print(f"Warning: Failed to insert batch into {table_name}: {e}")
-
-        counts[table_name] = counts.get(table_name, 0) + inserted
-        print(f"Imported {inserted} records into {table_name} from {json_file.name}")
-
-    conn.commit()
-    conn.close()
-
-    return counts
+        return counts
+    finally:
+        conn.close()
 
 
 def load_from_db(
-    db_path: str | Path,
     table: str,
     where_clause: str | None = None,
     params: tuple | None = None,
+    database_url: str | None = None,
 ) -> list[dict]:
     """Load data from database table as list of dictionaries.
 
     Args:
-        db_path: Path to the SQLite database file.
         table: Table name to query.
         where_clause: Optional WHERE clause (without the 'WHERE' keyword).
         params: Query parameters for the WHERE clause.
+        database_url: PostgreSQL connection string.
+            If None, reads from DATABASE_URL env var.
 
     Returns:
         List of dictionaries with column names as keys.
-
-    Raises:
-        sqlite3.Error: If query fails.
-
-    Example:
-        >>> races = load_from_db("racing.db", "races", "race_date = ?", ("2026/03/01",))
-        >>> len(races)
-        8
     """
-    conn = get_db_connection(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    conn = get_db_connection(database_url)
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    query = f"SELECT * FROM {table}"
-    if where_clause:
-        query += f" WHERE {where_clause}"
+        query = f"SELECT * FROM {table}"
+        if where_clause:
+            query += f" WHERE {where_clause}"
 
-    cursor.execute(query, params or ())
-    rows = cursor.fetchall()
-    conn.close()
-
-    return [dict(row) for row in rows]
+        cursor.execute(query, params or ())
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()

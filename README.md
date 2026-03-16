@@ -12,7 +12,7 @@ Extract horse racing data from Hong Kong Jockey Club (HKJC) using Scrapling Spid
 - Async crawling with concurrent requests
 - Normalized Supabase-compatible output
 - Sectional times (per-horse, per-section position and time data)
-- SQLite database export (built-in Python 3.13+)
+- PostgreSQL database export (via Docker Compose)
 - Analytics module for performance analysis and insights
 
 ## Module Organization
@@ -26,7 +26,7 @@ The scraper is organized into focused modules:
 - **jockey_trainer_parsers.py** - Jockey and trainer profile parsing
 - **spider.py** - Main spider implementation
 - **cli.py** - Command-line interface
-- **database.py** - SQLite database schema and import/export functions
+- **database.py** - PostgreSQL database schema and import/export functions
 - **analytics.py** - Statistical analysis functions for racing data
 
 ### Public API
@@ -45,7 +45,6 @@ from hkjc_scraper import (
 ## Installation
 
 ```bash
-cd /home/jc/code/hkjc-scraper
 uv sync --extra test
 ```
 
@@ -60,10 +59,18 @@ uv run hkjc-scrape --date 2026/03/01 --racecourse ST
 # Discover and crawl latest race
 uv run hkjc-scrape --racecourse ST
 
-# Export to SQLite database after scraping
-uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-sqlite
+# Export to PostgreSQL database after scraping
+uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-db
 
-# Run analytics on existing data (reads from database if exists, otherwise JSON files)
+# With explicit database URL
+uv run hkjc-scrape --date 2026/03/01 --export-db \
+  --database-url postgresql://hkjc:hkjc_dev@localhost:5432/hkjc_racing
+
+# Or set DATABASE_URL env var (auto-detected by --export-db)
+export DATABASE_URL=postgresql://hkjc:hkjc_dev@localhost:5432/hkjc_racing
+uv run hkjc-scrape --date 2026/03/01 --export-db
+
+# Run analytics on existing data
 uv run hkjc-scrape --analyze
 
 # Run analytics with JSON output
@@ -132,19 +139,13 @@ data/
 └── sectional_times_2026-03-01.json
 ```
 
-### SQLite Database
-
-Use `--export-sqlite` to export scraped JSON data to SQLite:
-
-```bash
-uv run hkjc-scrape --date 2026/03/01 --racecourse ST --export-sqlite --db-path data/racing.db
-```
+### PostgreSQL Database
 
 The database includes:
 - All 8 tables with proper foreign key constraints
 - Indexes on frequently queried columns
 - ON DELETE CASCADE for referential integrity
-- JSON serialization for complex fields (rating, sectional_times, running_position)
+- JSONB columns for native JSON querying (rating, sectional_times, running_position)
 
 ### Analytics
 
@@ -172,15 +173,49 @@ Analytics include:
 ## Testing
 
 ```bash
-# Run unit tests only
+# Run unit tests only (no database required)
 uv run pytest tests/ -v -m "not integration"
 
-# Run integration tests (makes network requests)
-uv run pytest tests/ -v -m integration
+# Run integration tests (requires PostgreSQL: docker compose up db -d)
+DATABASE_URL=postgresql://hkjc:hkjc_dev@localhost:5432/hkjc_racing \
+  uv run pytest tests/ -v -m integration
 
 # Run all tests
 uv run pytest tests/ -v
 ```
+
+## Docker Compose
+
+The project includes Docker Compose for local development with PostgreSQL.
+
+```bash
+# Start PostgreSQL
+docker compose up db -d
+
+# Connect to PostgreSQL directly
+psql postgresql://hkjc:hkjc_dev@localhost:5432/hkjc_racing
+
+# Run the scraper in Docker
+docker compose run app --date 2026/03/01 --racecourse ST --export-db
+
+# Stop and clean up
+docker compose down
+
+# Stop and remove data volumes
+docker compose down -v
+```
+
+### Configuration
+
+Copy `.env.example` to `.env` to customize:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_DB` | `hkjc_racing` | Database name |
+| `POSTGRES_USER` | `hkjc` | Database user |
+| `POSTGRES_PASSWORD` | `hkjc_dev` | Database password |
+| `POSTGRES_PORT` | `5432` | Host port for PostgreSQL |
+| `DATABASE_URL` | (derived) | Full connection string |
 
 ## Architecture
 - Extends `scrapling.spiders.Spider` for async crawling

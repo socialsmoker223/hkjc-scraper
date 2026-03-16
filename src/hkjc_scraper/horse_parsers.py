@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from .common import parse_career_record, extract_cell_value
+from .data_parsers import generate_race_id
 
 # Career record pattern: matches "冠-亞-季-總出賽次數*: 1-2-3-4" format
 _CAREER_RECORD_PATTERN = re.compile(
@@ -207,3 +208,69 @@ def parse_horse_profile(response: Any, horse_id: str, horse_name: str) -> dict:
                     result["total"] = career["total"]
 
     return result
+
+
+# Regex to extract race parameters from result page links
+_RACE_LINK_PATTERN = re.compile(
+    r'racedate=(\d{4}/\d{2}/\d{2})&Racecourse=(\w+)&RaceNo=(\d+)'
+)
+
+
+def parse_horse_gear(response: Any, horse_id: str) -> list[dict]:
+    """Parse gear data from horse past performance table.
+
+    Extracts gear information from the ``table.bigborder`` past performance
+    table on the horse profile page (Option=1).
+
+    Each row contains a link to the race result page (column 0) and gear
+    info (column 17, header 配備).
+
+    Args:
+        response: Scrapling response object.
+        horse_id: Horse ID.
+
+    Returns:
+        List of dicts with keys: race_id, horse_id, gear.
+    """
+    if response is None or not hasattr(response, 'css'):
+        return []
+
+    results: list[dict] = []
+    tables = response.css("table.bigborder")
+    if not tables:
+        return []
+
+    table = tables[0]
+    rows = table.css("tr")
+
+    for row in rows:
+        cells = row.css("td")
+        if len(cells) < 18:
+            continue
+
+        # Column 0: link to race result page
+        link = cells[0].css("a")
+        if not link:
+            continue
+        href = link[0].attrib.get("href", "")
+        match = _RACE_LINK_PATTERN.search(href)
+        if not match:
+            continue
+
+        racedate = match.group(1)
+        racecourse = match.group(2)
+        race_no = int(match.group(3))
+        race_id = generate_race_id(racedate, racecourse, race_no)
+
+        # Column 17: gear (配備)
+        gear = cells[17].text.strip() if cells[17].text else ""
+        if not gear or gear == "--":
+            continue
+
+        results.append({
+            "race_id": race_id,
+            "horse_id": horse_id,
+            "gear": gear,
+        })
+
+    return results

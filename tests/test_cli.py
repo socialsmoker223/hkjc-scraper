@@ -75,40 +75,15 @@ class TestSaveJson:
         assert file_path.exists()
 
 
-class TestExportToDbIfNeeded:
-    """Tests for export_to_db_if_needed function."""
+class TestExportToDb:
+    """Tests for export_to_db function."""
 
-    def test_export_to_db_if_needed_creates_database(self, tmp_path: Path):
-        """Test that export creates database file."""
-        from unittest.mock import patch
-
-        # Create sample JSON data files
-        data_dir = tmp_path / "data"
-        data_dir.mkdir()
-
-        races_data = [{
-            "race_id": "2026-03-01-ST-1",
-            "race_date": "2026/03/01",
-            "race_no": 1,
-            "racecourse": "沙田",
-            "distance": 1200,
-        }]
-        with open(data_dir / "races_2026-03-01.json", "w", encoding="utf-8") as f:
-            json.dump(races_data, f)
-
-        db_path = tmp_path / "test.db"
-
-        from hkjc_scraper.cli import export_to_db_if_needed
-        export_to_db_if_needed(str(data_dir), str(db_path))
-
-        assert db_path.exists()
-
-    def test_export_to_db_if_needed_handles_errors(self, tmp_path: Path, capsys):
+    def test_export_to_db_handles_errors(self, tmp_path: Path, capsys):
         """Test error handling in export."""
-        from hkjc_scraper.cli import export_to_db_if_needed
+        from hkjc_scraper.cli import export_to_db
 
-        # Use non-existent directory
-        export_to_db_if_needed("/nonexistent/path", str(tmp_path / "test.db"))
+        # Use non-existent directory — should print error, not raise
+        export_to_db("/nonexistent/path", "postgresql://bad:url@localhost/nodb")
 
         captured = capsys.readouterr()
         assert "Error" in captured.out
@@ -177,27 +152,24 @@ class TestCrawlRace:
         # Check files were created
         assert (output_dir / "races_2026-03-01.json").exists()
 
-    def test_crawl_race_exports_to_db(self, tmp_path: Path):
-        """Test that crawl_race exports to SQLite when requested."""
+    def test_crawl_race_calls_export_when_requested(self, tmp_path: Path):
+        """Test that crawl_race calls export_to_db when export_db=True."""
         from unittest.mock import AsyncMock, patch, MagicMock
         import asyncio
 
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        db_path = tmp_path / "test.db"
 
-        # Create sample JSON file
-        races_data = [{"race_id": "R1", "race_date": "2026/03/01", "race_no": 1, "racecourse": "沙田"}]
-        with open(output_dir / "races_2026-03-01.json", "w", encoding="utf-8") as f:
-            json.dump(races_data, f)
-
-        # Mock the spider
-        with patch("hkjc_scraper.cli.HKJCRacingSpider") as mock_spider_class:
+        # Mock the spider and the export function
+        with patch("hkjc_scraper.cli.HKJCRacingSpider") as mock_spider_class, \
+             patch("hkjc_scraper.cli.export_to_db") as mock_export:
             mock_spider = AsyncMock()
             mock_spider.run = AsyncMock()
             mock_result = MagicMock()
-            mock_result.items = []
-            mock_result.stats.requests_count = 0
+            mock_result.items = [
+                {"table": "races", "data": {"race_id": "R1"}},
+            ]
+            mock_result.stats.requests_count = 1
             mock_spider.run.return_value = mock_result
             mock_spider_class.return_value = mock_spider
 
@@ -206,8 +178,42 @@ class TestCrawlRace:
                 date="2026/03/01",
                 racecourse="ST",
                 output_dir=str(output_dir),
-                export_sqlite=True,
-                db_path=str(db_path),
+                export_db=True,
+                database_url="postgresql://test:test@localhost/test",
             ))
 
-        assert db_path.exists()
+        mock_export.assert_called_once_with(
+            str(output_dir),
+            "postgresql://test:test@localhost/test",
+            grouped={"races": [{"race_id": "R1"}]},
+        )
+
+    def test_crawl_race_skips_json_when_export_db(self, tmp_path: Path):
+        """Test that crawl_race does not save JSON files when export_db=True."""
+        from unittest.mock import AsyncMock, patch
+        import asyncio
+
+        output_dir = tmp_path / "output"
+
+        with patch("hkjc_scraper.cli.HKJCRacingSpider") as mock_spider_class, \
+             patch("hkjc_scraper.cli.export_to_db"):
+            mock_spider = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.items = [
+                {"table": "races", "data": {"race_id": "R1"}},
+            ]
+            mock_result.stats.requests_count = 1
+            mock_spider.run.return_value = mock_result
+            mock_spider_class.return_value = mock_spider
+
+            from hkjc_scraper.cli import crawl_race
+            asyncio.run(crawl_race(
+                date="2026/03/01",
+                racecourse="ST",
+                output_dir=str(output_dir),
+                export_db=True,
+                database_url="postgresql://test:test@localhost/test",
+            ))
+
+        # No JSON files should be created
+        assert not output_dir.exists() or not list(output_dir.glob("*.json"))

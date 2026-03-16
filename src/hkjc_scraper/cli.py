@@ -2,12 +2,26 @@
 import argparse
 import asyncio
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 import sys
 
 from hkjc_scraper.spider import HKJCRacingSpider
-from hkjc_scraper.database import export_json_to_db
+from hkjc_scraper.database import (
+    create_database,
+    export_json_to_db,
+    get_db_connection,
+    import_dividends,
+    import_horses,
+    import_incidents,
+    import_jockeys,
+    import_performance,
+    import_races,
+    import_sectional_times,
+    import_trainers,
+    update_performance_gear,
+)
 
 
 def save_json(data: list, file_path: Path) -> None:
@@ -47,19 +61,86 @@ def group_items_by_table(items: list) -> dict:
     return grouped
 
 
-def export_to_db_if_needed(
-    output_dir: str,
-    db_path: str,
+def _setup_db(database_url: str | None = None) -> None:
+    """Ensure database schema exists."""
+    url = database_url or os.environ.get("DATABASE_URL")
+    create_database(url)
+
+
+def _flush_to_db(
+    grouped: dict,
+    database_url: str | None = None,
+    accumulator: dict[str, int] | None = None,
 ) -> None:
-    """Export JSON data to SQLite database if requested.
+    """Flush in-memory grouped data to PostgreSQL and update counts.
 
     Args:
-        output_dir: Directory containing JSON data files.
-        db_path: Path to the SQLite database file.
+        grouped: Dict of {table_name: [records]} to import.
+        database_url: PostgreSQL connection string.
+        accumulator: Optional dict to accumulate per-table counts across calls.
     """
-    print(f"\nExporting to SQLite database: {db_path}")
+    url = database_url or os.environ.get("DATABASE_URL")
+    conn = get_db_connection(url)
     try:
-        counts = export_json_to_db(output_dir, db_path)
+        for table_name in _TABLE_ORDER:
+            records = grouped.get(table_name, [])
+            if not records:
+                continue
+            importer = _TABLE_IMPORTERS[table_name]
+            inserted = importer(records, conn)
+            conn.commit()
+            if accumulator is not None:
+                accumulator[table_name] = accumulator.get(table_name, 0) + inserted
+    finally:
+        conn.close()
+
+
+_TABLE_IMPORTERS = {
+    "races": import_races,
+    "horses": import_horses,
+    "jockeys": import_jockeys,
+    "trainers": import_trainers,
+    "performance": import_performance,
+    "dividends": import_dividends,
+    "incidents": import_incidents,
+    "sectional_times": import_sectional_times,
+    "performance_gear": update_performance_gear,
+}
+
+# Parent tables first to satisfy foreign keys.
+# performance_gear runs last — it updates existing performance rows.
+_TABLE_ORDER = [
+    "races", "horses", "jockeys", "trainers",
+    "performance", "dividends", "incidents", "sectional_times",
+    "performance_gear",
+]
+
+
+def export_to_db(
+    output_dir: str,
+    database_url: str | None = None,
+    grouped: dict | None = None,
+) -> None:
+    """Export data to PostgreSQL database.
+
+    When ``grouped`` is provided, imports directly from in-memory data.
+    Otherwise falls back to reading JSON files from ``output_dir``.
+
+    Args:
+        output_dir: Directory containing JSON data files (fallback).
+        database_url: PostgreSQL connection string. If None, reads DATABASE_URL env var.
+        grouped: Optional dict of {table_name: [records]} for direct import.
+    """
+    print("\nExporting to PostgreSQL database...")
+    try:
+        if grouped:
+            _setup_db(database_url)
+            counts: dict[str, int] = {}
+            _flush_to_db(grouped, database_url, counts)
+        else:
+            url = database_url or os.environ.get("DATABASE_URL")
+            counts = export_json_to_db(output_dir, url)
+
         print("\nDatabase export summary:")
         for table, count in counts.items():
             print(f"  {table}: {count} records")
@@ -71,8 +152,8 @@ async def crawl_race(
     date: str | None = None,
     racecourse: str = "ST",
     output_dir: str = "data",
-    export_sqlite: bool = False,
-    db_path: str = "data/hkjc_racing.db",
+    export_db: bool = False,
+    database_url: str | None = None,
 ) -> dict:
     """Crawl race data from HKJC website.
 
@@ -80,8 +161,8 @@ async def crawl_race(
         date: Race date in YYYY/MM/DD format, or None for latest
         racecourse: Race course code (ST for Sha Tin, HV for Happy Valley)
         output_dir: Directory to save output JSON files
-        export_sqlite: If True, export data to SQLite database after scraping
-        db_path: Path to SQLite database file
+        export_db: If True, export data to PostgreSQL after scraping
+        database_url: PostgreSQL connection string
 
     Returns:
         Dictionary with table names as keys and lists of scraped data
@@ -93,18 +174,17 @@ async def crawl_race(
     result = await spider.run()
     grouped = group_items_by_table(result.items)
 
-    # Create output directory
-    out_path = Path(output_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
-
-    # Save each table's data to a separate JSON file
-    date_str = date.replace("/", "-") if date else "latest"
-    for table_name, data in grouped.items():
-        if data:
-            file_path = out_path / f"{table_name}_{date_str}.json"
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            print(f"Saved {len(data)} {table_name} records to {file_path}")
+    if not export_db:
+        # Save each table's data to a separate JSON file
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        date_str = date.replace("/", "-") if date else "latest"
+        for table_name, data in grouped.items():
+            if data:
+                file_path = out_path / f"{table_name}_{date_str}.json"
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                print(f"Saved {len(data)} {table_name} records to {file_path}")
 
     # Print summary
     print(f"\nSummary:")
@@ -112,9 +192,9 @@ async def crawl_race(
         print(f"  {table_name}: {len(data)} records")
     print(f"  Total requests: {result.stats.requests_count}")
 
-    # Export to database if requested
-    if export_sqlite:
-        export_to_db_if_needed(output_dir, db_path)
+    # Export to database directly from memory
+    if export_db:
+        export_to_db(output_dir, database_url, grouped=grouped)
 
     return grouped
 
@@ -167,15 +247,15 @@ async def async_main() -> None:
 
     # Database export options
     parser.add_argument(
-        "--export-sqlite",
+        "--export-db",
         action="store_true",
-        help="Export scraped JSON data to SQLite database",
+        help="Export scraped JSON data to PostgreSQL database",
     )
     parser.add_argument(
-        "--db-path",
+        "--database-url",
         type=str,
-        default="data/hkjc_racing.db",
-        help="Path to SQLite database file (default: data/hkjc_racing.db)",
+        default=None,
+        help="PostgreSQL connection URL. Also reads DATABASE_URL env var.",
     )
 
     args = parser.parse_args()
@@ -205,9 +285,8 @@ async def async_main() -> None:
         for entry in sorted(dates, key=lambda d: (d["date"], d["racecourse"])):
             print(f"  {entry['date']} @ {entry['racecourse']} ({entry['race_count']} races)")
 
-        # Export to database if requested (for any existing data)
-        if args.export_sqlite:
-            export_to_db_if_needed(args.output, args.db_path)
+        if args.export_db:
+            export_to_db(args.output, args.database_url)
         return
 
     # Handle --latest mode: discover and scrape today's races
@@ -244,17 +323,16 @@ async def async_main() -> None:
         result = await spider.run()
         grouped = group_items_by_table(result.items)
 
-        # Create output directory
-        out_path = Path(args.output)
-        out_path.mkdir(parents=True, exist_ok=True)
-
-        # Save each table's data to a separate JSON file
-        for table_name, data in grouped.items():
-            if data:
-                file_path = out_path / f"{table_name}_{today.replace('/', '-')}.json"
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                print(f"Saved {len(data)} {table_name} records to {file_path}")
+        if not args.export_db:
+            # Save each table's data to a separate JSON file
+            out_path = Path(args.output)
+            out_path.mkdir(parents=True, exist_ok=True)
+            for table_name, data in grouped.items():
+                if data:
+                    file_path = out_path / f"{table_name}_{today.replace('/', '-')}.json"
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    print(f"Saved {len(data)} {table_name} records to {file_path}")
 
         # Print summary
         print(f"\nSummary:")
@@ -262,9 +340,8 @@ async def async_main() -> None:
             print(f"  {table_name}: {len(data)} records")
         print(f"  Total requests: {result.stats.requests_count}")
 
-        # Export to database if requested
-        if args.export_sqlite:
-            export_to_db_if_needed(args.output, args.db_path)
+        if args.export_db:
+            export_to_db(args.output, args.database_url, grouped=grouped)
         return
 
     # Handle --start-date mode: discover dates first, then scrape discovered dates
@@ -276,37 +353,46 @@ async def async_main() -> None:
             end_date=end_date,
             refresh_cache=args.refresh_cache,
         )
-        print(f"Discovered {len(dates)} race dates. Scraping...")
-        # Extract just the date strings for scraping
         date_strings = [entry["date"] for entry in dates]
-        spider = HKJCRacingSpider(
-            dates=date_strings,
-            racecourse=args.racecourse,
-        )
-        result = await spider.run()
-        grouped = group_items_by_table(result.items)
+        print(f"Discovered {len(dates)} race dates. Scraping...")
 
-        # Create output directory
-        out_path = Path(args.output)
-        out_path.mkdir(parents=True, exist_ok=True)
+        if args.export_db:
+            # Stream to DB: scrape one date at a time to keep memory bounded
+            _setup_db(args.database_url)
+            total_counts: dict[str, int] = {}
+            for i, d in enumerate(date_strings, 1):
+                print(f"\n[{i}/{len(date_strings)}] Scraping {d}...")
+                per_date_spider = HKJCRacingSpider(
+                    dates=[d], racecourse=args.racecourse,
+                )
+                result = await per_date_spider.run()
+                grouped = group_items_by_table(result.items)
+                _flush_to_db(grouped, args.database_url, total_counts)
 
-        # Save each table's data to a separate JSON file
-        for table_name, data in grouped.items():
-            if data:
-                file_path = out_path / f"{table_name}_batch.json"
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-                print(f"Saved {len(data)} {table_name} records to {file_path}")
+            print("\nDatabase export summary:")
+            for table, count in total_counts.items():
+                print(f"  {table}: {count} records")
+        else:
+            # Batch mode: scrape all dates, save to JSON
+            spider = HKJCRacingSpider(
+                dates=date_strings, racecourse=args.racecourse,
+            )
+            result = await spider.run()
+            grouped = group_items_by_table(result.items)
 
-        # Print summary
-        print(f"\nSummary:")
-        for table_name, data in grouped.items():
-            print(f"  {table_name}: {len(data)} records")
-        print(f"  Total requests: {result.stats.requests_count}")
+            out_path = Path(args.output)
+            out_path.mkdir(parents=True, exist_ok=True)
+            for table_name, data in grouped.items():
+                if data:
+                    file_path = out_path / f"{table_name}_batch.json"
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    print(f"Saved {len(data)} {table_name} records to {file_path}")
 
-        # Export to database if requested
-        if args.export_sqlite:
-            export_to_db_if_needed(args.output, args.db_path)
+            print(f"\nSummary:")
+            for table_name, data in grouped.items():
+                print(f"  {table_name}: {len(data)} records")
+            print(f"  Total requests: {result.stats.requests_count}")
         return
 
     # Default behavior: scrape single date
@@ -314,8 +400,8 @@ async def async_main() -> None:
         args.date,
         args.racecourse,
         args.output,
-        args.export_sqlite,
-        args.db_path,
+        args.export_db,
+        args.database_url,
     )
 
 

@@ -16,6 +16,10 @@ data/
 # Playwright MCP logs
 .playwright-mcp/
 
+# Environment variables
+.env
+
 # Claude Code settings (optional - comment out if you want to track them)
 .claude/
 .worktrees/
+.grepai/
